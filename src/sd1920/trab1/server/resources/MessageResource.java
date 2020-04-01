@@ -144,7 +144,7 @@ public class MessageResource implements MessageService {
 			synchronized (this) {
 				Set<Long> mids = userInboxs.getOrDefault(user, Collections.emptySet());
 				for(Long l: mids) {
-					Log.info("Adding messaeg with id: " + l + ".");
+					Log.info("Adding message with id: " + l + ".");
 					messages.add(l);
 				}
 			}
@@ -158,12 +158,21 @@ public class MessageResource implements MessageService {
 
 	@Override
 	public void removeFromUserInbox(String user, long mid, String pwd) {
-		throw new Error("Not Implemented...");
+		if (verify_pwd(user, pwd)) {
+			List<Long> l = new ArrayList<>(userInboxs.get(user));
+			if (l.contains(mid))
+				l.remove(mid);
+			Set set = new HashSet(l);
+			userInboxs.put(user, set);
+		}
+		else{
+			System.out.println("Error 403");
+		}
 	}
-
 
 	@Override
 	public void deleteMessage(String user, long mid, String pwd) {
+		verify_pwd(user,pwd);
 		throw new Error("Not Implemented...");
 	}
 
@@ -176,8 +185,6 @@ public class MessageResource implements MessageService {
 		} catch (UnknownHostException e) {
 			e.printStackTrace();
 		}
-
-
 
 		ClientConfig config = new ClientConfig();
 		//How much time until timeout on opening the TCP connection to the server
