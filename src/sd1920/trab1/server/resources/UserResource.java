@@ -31,14 +31,12 @@ public class UserResource implements UserService {
             String domain = InetAddress.getLocalHost().getCanonicalHostName();
             if(!user.getDomain().equals(domain))
                 throw new WebApplicationException(Status.FORBIDDEN);
-            boolean exists = false;
-            synchronized (this){
-                exists = userMap.containsKey(user.getName());
-            }
-            if (exists) throw new WebApplicationException(Status.CONFLICT);
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
+
+        exists(user.getName());
+
         synchronized (this) {
             userMap.put(user.getName(), user);
         }
@@ -48,11 +46,7 @@ public class UserResource implements UserService {
 
     @Override
     public User getUser(String name, String pwd) {
-        boolean exists = false;
-        synchronized (this){
-            exists = userMap.containsKey(name);
-        }
-        if (!exists) throw new WebApplicationException(Status.FORBIDDEN);
+        exists(name);
 
         User u = null;
 
@@ -67,11 +61,24 @@ public class UserResource implements UserService {
 
     @Override
     public User updateUser(String name, String pwd, User user) {
-        return null;
+        User u = getUser(name,pwd);
+        synchronized (this){
+            userMap.replace(name,user);
+        }
+        return user;
     }
 
     @Override
     public User deleteUser(String name, String pwd) {
         return null;
+    }
+
+    private void exists(String name){
+        boolean exists = false;
+        synchronized (this){
+            exists = userMap.containsKey(name);
+        }
+        if (!exists) throw new WebApplicationException(Status.FORBIDDEN);
+
     }
 }
