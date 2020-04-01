@@ -17,7 +17,7 @@ import sd1920.trab1.api.User;
 public interface UserService {
 
 	String PATH = "/users";
-	
+
 	/**
 	 * Creates a new user in the local domain.
 	 * @param user User to be created
@@ -30,7 +30,7 @@ public interface UserService {
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	String postUser(User user);
-	
+
 	/**
 	 * Obtains the information on the user identified by name
 	 * @param name the name of the user
@@ -44,7 +44,7 @@ public interface UserService {
 	@Path("/{name}")
 	@Produces(MediaType.APPLICATION_JSON)
 	User getUser(@PathParam("name") String name, @QueryParam("pwd") String pwd);
-	
+
 	/**
 	 * Modifies the information of a user. Values of null in any field of the user will be 
 	 * considered as if the the fields is not to be modified (the name cannot be modified).
@@ -61,7 +61,7 @@ public interface UserService {
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	User updateUser(@PathParam("name") String name, @QueryParam("pwd") String pwd, User user);
-	
+
 	/**
 	 * Deletes the user identified by name
 	 * @param name the name of the user
@@ -75,5 +75,5 @@ public interface UserService {
 	@Path("/{name}")
 	@Produces(MediaType.APPLICATION_JSON)
 	User deleteUser(@PathParam("name") String name, @QueryParam("pwd") String pwd);
-	
+
 }

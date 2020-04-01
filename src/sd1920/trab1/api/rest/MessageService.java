@@ -17,7 +17,7 @@ import sd1920.trab1.api.Message;
 @Path(MessageService.PATH)
 public interface MessageService {
 	String PATH = "/messages";
-	
+
 	/**
 	 * Posts a new message to the server, associating it to the inbox of every individual destination.
 	 * An outgoing message should be modified before delivering it, by assigning an ID, and by changing the
@@ -25,7 +25,7 @@ public interface MessageService {
 	 * associated with a user.
 	 * NOTE: there might be some destinations that are not from the local domain (see grading for 
 	 * how addressing this feature is valued).
-	 * 
+	 *
 	 * @param msg the message object to be posted to the server
 	 * @param pwd password of the user sending the message
 	 * @return 200 the unique numerical identifier for the posted message;
@@ -38,7 +38,7 @@ public interface MessageService {
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	long postMessage(@QueryParam("pwd") String pwd, Message msg);
-	
+
 	/**
 	 * Obtains the message identified by mid of user user
 	 * @param user user name for the operation
@@ -52,7 +52,7 @@ public interface MessageService {
 	@Path("/mbox/{user}/{mid}")
 	@Produces(MediaType.APPLICATION_JSON)
 	Message getMessage(@PathParam("user") String user, @PathParam("mid") long mid,
-			@QueryParam("pwd") String pwd);
+					   @QueryParam("pwd") String pwd);
 
 	/**
 	 * Returns a list of all ids of messages stored in the server for a given user
@@ -77,14 +77,14 @@ public interface MessageService {
 	 */
 	@DELETE
 	@Path("/mbox/{user}/{mid}")
-	void removeFromUserInbox(@PathParam("user") String user, @PathParam("mid") long mid, 
-			@QueryParam("pwd") String pwd);
+	void removeFromUserInbox(@PathParam("user") String user, @PathParam("mid") long mid,
+							 @QueryParam("pwd") String pwd);
 
 	/**
 	 * Removes the message identified by mid from the inboxes of any server that holds the message.
 	 * The deletion can be executed asynchronously and does not generate any error message if the
 	 * message does not exist.
-	 * 
+	 *
 	 * @param user the username of the sender of the message to be deleted
 	 * @param mid the identifier of the message to be deleted
 	 * @param pwd password of the user that sent the message
@@ -93,9 +93,8 @@ public interface MessageService {
 	 */
 	@DELETE
 	@Path("/msg/{user}/{mid}")
-	@Produces(MediaType.APPLICATION_JSON)
-	void deleteMessage(@PathParam("user") String user, @PathParam("mid") long mid, 
-			@QueryParam("pwd") String pwd);
-	
-	
+	void deleteMessage(@PathParam("user") String user, @PathParam("mid") long mid,
+					   @QueryParam("pwd") String pwd);
+
+
 }

@@ -32,9 +32,8 @@ public class MessageResource implements MessageService {
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
 	}
 
-
-
-	public long postMessage(Message msg) {
+	@Override
+	public long postMessage(String pwd, Message msg) {
 		Log.info("Received request to register a new message (Sender: " + msg.getSender() + "; Subject: "+msg.getSubject()+")");
 
 		//Check if message is valid, if not return HTTP CONFLICT (409)
@@ -44,7 +43,7 @@ public class MessageResource implements MessageService {
 		}
 
 		long newID = 0;
-		
+
 		synchronized (this) {
 
 			//Generate a new id for the message, that is not in use yet
@@ -76,21 +75,15 @@ public class MessageResource implements MessageService {
 	}
 
 	@Override
-	public long postMessage(String pwd, Message msg) {
-		return 0;
-	}
-
-
-
-	public Message getMessage(long mid) {
+	public Message getMessage(String user, long mid, String pwd) {
 		Log.info("Received request for message with id: " + mid +".");
 		Message m = null;
-		
+
 		synchronized (this) {
 			m = allMessages.get(mid);
 		}
-		
-		if(m == null) {  //check if message exists	
+
+		if(m == null) {  //check if message exists
 			Log.info("Requested message does not exists.");
 			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
 		}
@@ -98,12 +91,6 @@ public class MessageResource implements MessageService {
 		Log.info("Returning requested message to user.");
 		return m; //Return message to the client with code HTTP 200
 	}
-
-	@Override
-	public Message getMessage(String user, long mid, String pwd) {
-		return null;
-	}
-
 
 	public byte[] getMessageBody(long mid) {
 		Log.info("Received request for body of message with id: " + mid +".");
@@ -113,8 +100,8 @@ public class MessageResource implements MessageService {
 			if(m != null)
 				contents = m.getContents();
 		}
-		
-		
+
+
 		if(contents != null) { //implicitaly checks if message exists
 			Log.info("Requested message does not exists.");
 			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
@@ -125,33 +112,30 @@ public class MessageResource implements MessageService {
 	}
 
 
-	public List<Message> getMessages(String user) {
+	@Override
+	public List<Long> getMessages(String user, String pwd) {
 		Log.info("Received request for messages with optional user parameter set to: '" + user + "'");
-		List<Message> messages = new ArrayList<Message>();
+		List<Long> messages = new ArrayList<>();
 		if(user == null) {
 			Log.info("Collecting all messages in server");
 			synchronized (this) {
-				messages.addAll(allMessages.values());
+				messages.addAll(allMessages.keySet());
 			}
-			
+
 		} else {
 			Log.info("Collecting all messages in server for user " + user);
 			synchronized (this) {
 				Set<Long> mids = userInboxs.getOrDefault(user, Collections.emptySet());
-				for(Long l: mids) { 
+				for(Long l: mids) {
 					Log.info("Adding messaeg with id: " + l + ".");
-					messages.add(allMessages.get(l));
+					messages.add(l);
 				}
 			}
-			
+
 		}
 		Log.info("Returning message list to user with " + messages.size() + " messages.");
-		return messages;
-	}
 
-	@Override
-	public List<Long> getMessages(String user, String pwd) {
-		return null;
+		return messages;
 	}
 
 
