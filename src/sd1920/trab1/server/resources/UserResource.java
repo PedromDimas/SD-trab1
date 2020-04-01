@@ -66,12 +66,23 @@ public class UserResource implements UserService {
     @Override
     public User updateUser(String name, String pwd, User user) {
         User u = getUser(name,pwd);
-        synchronized (this){
-            user = userMap.replace(name,user);
-        }
-        if (user == null) return u;
+        User tmp = u;
+        if (user.getPwd() != null) tmp.setPwd(user.getPwd());
+        if (user.getName() != null) tmp.setName(user.getName());
+        if (user.getDomain() != null) tmp.setDomain(user.getDomain());
+        if (user.getDisplayName() != null) tmp.setDisplayName(user.getDisplayName());
 
-        return user;
+        synchronized (this){
+            if (user.getName()==null){
+                user = userMap.replace(name,tmp);
+                return user;
+            }else{
+                userMap.remove(u);
+                userMap.put(tmp.getName(),tmp);
+                return tmp;
+            }
+
+        }
     }
 
     @Override
