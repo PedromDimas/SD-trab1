@@ -166,7 +166,7 @@ public class MessageResource implements MessageService {
 			userInboxs.put(user, set);
 		}
 		else{
-			System.out.println("Error 403");
+			throw new WebApplicationException(Status.FORBIDDEN);
 		}
 	}
 
