@@ -52,7 +52,7 @@ public class UserResource implements UserService {
             throw new WebApplicationException(Status.FORBIDDEN);
         }
 
-        User u = null;
+        User u;
 
         synchronized (this){
             u = userMap.get(name);
@@ -66,32 +66,25 @@ public class UserResource implements UserService {
     @Override
     public User updateUser(String name, String pwd, User user) {
         User u = getUser(name,pwd);
-        User tmp = u;
-        if (user.getPwd() != null) tmp.setPwd(user.getPwd());
-        if (user.getName() != null) tmp.setName(user.getName());
-        if (user.getDomain() != null) tmp.setDomain(user.getDomain());
-        if (user.getDisplayName() != null) tmp.setDisplayName(user.getDisplayName());
+
+        if (user.getPwd() != null) u.setPwd(user.getPwd());
+        if (user.getDisplayName() != null) u.setDisplayName(user.getDisplayName());
 
         synchronized (this){
-            if (user.getName()==null){
-                user = userMap.replace(name,tmp);
-                return user;
-            }else{
-                userMap.remove(u);
-                userMap.put(tmp.getName(),tmp);
-                return tmp;
-            }
-
+            userMap.replace(name,u);
         }
+        return  u;
     }
 
     @Override
     public User deleteUser(String name, String pwd) {
-        return null;
+        User u = getUser(name,pwd);
+        userMap.remove(name,u);
+        return u;
     }
 
     private boolean exists (String name, boolean flag){
-        boolean exists = false;
+        boolean exists;
         synchronized (this){
             exists = userMap.containsKey(name);
         }
