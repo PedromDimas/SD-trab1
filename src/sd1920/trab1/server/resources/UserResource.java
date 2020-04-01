@@ -16,7 +16,7 @@ import javax.ws.rs.core.Response.Status;
 @Singleton
 public class UserResource implements UserService {
 
-    Map<String, User> userMap;
+    private final Map<String, User> userMap;
 
     private static Logger Log = Logger.getLogger(MessageResource.class.getName());
 
@@ -31,19 +31,38 @@ public class UserResource implements UserService {
             String domain = InetAddress.getLocalHost().getCanonicalHostName();
             if(!user.getDomain().equals(domain))
                 throw new WebApplicationException(Status.FORBIDDEN);
-            if (userMap.containsKey(user.getName())) throw new WebApplicationException(Status.CONFLICT);
+            boolean exists = false;
+            synchronized (this){
+                exists = userMap.containsKey(user.getName());
+            }
+            if (exists) throw new WebApplicationException(Status.CONFLICT);
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
-
-        userMap.put(user.getName(),user);
+        synchronized (this) {
+            userMap.put(user.getName(), user);
+        }
 
         return user.getName()+"@"+user.getDomain();
     }
 
     @Override
     public User getUser(String name, String pwd) {
-        return null;
+        boolean exists = false;
+        synchronized (this){
+            exists = userMap.containsKey(name);
+        }
+        if (!exists) throw new WebApplicationException(Status.FORBIDDEN);
+
+        User u = null;
+
+        synchronized (this){
+            u = userMap.get(name);
+        }
+
+        if (!u.getPwd().equals(pwd)) throw new WebApplicationException(Status.FORBIDDEN);
+
+        return u;
     }
 
     @Override
