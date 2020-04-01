@@ -1,4 +1,4 @@
-package sd1920.trab1.api;
+package sd1920.trab1.discovery;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -53,7 +53,7 @@ public class Discovery {
 	 * @param  serviceName the name of the service to announce
 	 * @param  serviceURI an uri string - representing the contact endpoint of the service being announced
 	 */
-	Discovery( InetSocketAddress addr, String serviceName, String serviceURI) {
+	public Discovery(InetSocketAddress addr, String serviceName, String serviceURI) {
 		this.addr = addr;
 		this.serviceName = serviceName;
 		this.serviceURI  = serviceURI;
