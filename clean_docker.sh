@@ -7,4 +7,5 @@ fi
 
 docker stop $(docker ps -a -q)
 docker rm $(docker ps -a -q)
+echo "y" | docker system prune
 docker ps -a

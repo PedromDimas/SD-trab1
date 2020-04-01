@@ -29,13 +29,15 @@ public class UserResource implements UserService {
 
         try {
             String domain = InetAddress.getLocalHost().getCanonicalHostName();
-            if(!user.getDomain().equals(domain))
-                throw new WebApplicationException(Status.FORBIDDEN);
+            if (user.getDomain() == null || user.getDomain().equals("") || user.getDomain().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
+            if(!user.getDomain().equals(domain)) throw new WebApplicationException(Status.FORBIDDEN);
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
+        if (user.getName()==null||user.getName().equals("")||user.getName().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
+        if(exists(user.getName(),false)) throw new WebApplicationException(Status.CONFLICT);
 
-        exists(user.getName());
+        if (user.getPwd()==null || user.getPwd().equals("")||user.getPwd().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
 
         synchronized (this) {
             userMap.put(user.getName(), user);
@@ -46,7 +48,9 @@ public class UserResource implements UserService {
 
     @Override
     public User getUser(String name, String pwd) {
-        exists(name);
+        if(!exists(name,false)){
+            throw new WebApplicationException(Status.FORBIDDEN);
+        }
 
         User u = null;
 
@@ -63,8 +67,10 @@ public class UserResource implements UserService {
     public User updateUser(String name, String pwd, User user) {
         User u = getUser(name,pwd);
         synchronized (this){
-            userMap.replace(name,user);
+            user = userMap.replace(name,user);
         }
+        if (user == null) return u;
+
         return user;
     }
 
@@ -73,12 +79,14 @@ public class UserResource implements UserService {
         return null;
     }
 
-    private void exists(String name){
+    private boolean exists (String name, boolean flag){
         boolean exists = false;
         synchronized (this){
             exists = userMap.containsKey(name);
         }
-        if (!exists) throw new WebApplicationException(Status.FORBIDDEN);
-
+        if (flag){
+            if (exists) throw new WebApplicationException(Status.FORBIDDEN);
+        }
+        return exists;
     }
 }
