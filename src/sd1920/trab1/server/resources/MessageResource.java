@@ -1,5 +1,8 @@
 package sd1920.trab1.server.resources;
 
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -20,7 +23,6 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientProperties;
 import sd1920.trab1.api.Message;
@@ -29,6 +31,7 @@ import sd1920.trab1.api.rest.MessageService;
 import sd1920.trab1.api.rest.UserService;
 import sd1920.trab1.clients.GetMessageClient;
 import sd1920.trab1.clients.utils.MessageUtills;
+import sd1920.trab1.discovery.Discovery;
 
 @Singleton
 public class MessageResource implements MessageService {
@@ -39,8 +42,10 @@ public class MessageResource implements MessageService {
 	private final Map<String,Set<Long>> userInboxs = new HashMap<>();
 
 	private static Logger Log = Logger.getLogger(MessageResource.class.getName());
+	Discovery discovery_channel;
 
-	public MessageResource() {
+	public MessageResource(Discovery discovery_channel) {
+		this.discovery_channel = discovery_channel;
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
 	}
 
@@ -163,7 +168,16 @@ public class MessageResource implements MessageService {
 	}
 
 	public boolean verify_pwd(String name, String pwd){
-		String servUrl = "";
+		String url = "";
+		try {
+			String domain = InetAddress.getLocalHost().getCanonicalHostName();
+			URI[] uris = discovery_channel.knownUrisOf(domain);
+			url = uris[uris.length-1].toString();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+
+
 
 		ClientConfig config = new ClientConfig();
 		//How much time until timeout on opening the TCP connection to the server
@@ -173,7 +187,7 @@ public class MessageResource implements MessageService {
 
 		Client client = ClientBuilder.newClient();
 
-		WebTarget target = client.target(servUrl).path(UserService.PATH);
+		WebTarget target = client.target(url).path(UserService.PATH);
 
 		short retries = 0;
 		boolean success = false;
