@@ -20,6 +20,10 @@ echo "****************************************
 
 docker network create -d bridge sdnet
 
-sh test-sd-tp1.sh -image sd1920-trab1-52919-52858
+rm out.txt
+
+sh test-sd-tp1.sh -image sd1920-trab1-52919-52858 -log ALL |tee out.txt
+
+sh clean_docker.sh
 
 

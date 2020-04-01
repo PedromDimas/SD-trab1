@@ -5,6 +5,6 @@ if [ $EUID != 0 ]; then
     exit $?
 fi
 
-echo "y" | docker system prune
-echo "clean!"
+docker stop $(docker ps -a -q)
+docker rm $(docker ps -a -q)
 docker ps -a
