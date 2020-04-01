@@ -23,8 +23,8 @@ public class MessageResource implements MessageService {
 
 	private Random randomNumberGenerator;
 
-	private final Map<Long,Message> allMessages = new HashMap<Long, Message>();
-	private final Map<String,Set<Long>> userInboxs = new HashMap<String, Set<Long>>();
+	private final Map<Long,Message> allMessages = new HashMap<>();
+	private final Map<String,Set<Long>> userInboxs = new HashMap<>();
 
 	private static Logger Log = Logger.getLogger(MessageResource.class.getName());
 
@@ -63,7 +63,7 @@ public class MessageResource implements MessageService {
 			//Add the message (identifier) to the inbox of each recipient
 			for(String recipient: msg.getDestination()) {
 				if(!userInboxs.containsKey(recipient)) {
-					userInboxs.put(recipient, new HashSet<Long>());
+					userInboxs.put(recipient, new HashSet<>());
 				}
 				userInboxs.get(recipient).add(newID);
 			}
@@ -139,24 +139,14 @@ public class MessageResource implements MessageService {
 	}
 
 
-	public void deleteMessage(long mid) {
-		throw new Error("Not Implemented...");
-	}
-
-
-	public void removeFromUserInbox(String user, long mid) {
-		throw new Error("Not Implemented...");
-
-	}
-
 	@Override
 	public void removeFromUserInbox(String user, long mid, String pwd) {
-
+		throw new Error("Not Implemented...");
 	}
 
 
 	@Override
 	public void deleteMessage(String user, long mid, String pwd) {
-
+		throw new Error("Not Implemented...");
 	}
 }
