@@ -204,7 +204,7 @@ public class MessageResource implements MessageService {
 		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
 
 		Client client = ClientBuilder.newClient(config);
-		WebTarget target = client.target("http://"+url+":8080").path(UserService.PATH).path(name).queryParam("pwd",pwd);
+		WebTarget target = client.target("http://"+url+":8080/rest").path(UserService.PATH).path(name).queryParam("pwd",pwd);
 
 		System.out.println("PATH + " + target);
 
