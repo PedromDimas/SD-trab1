@@ -48,6 +48,7 @@ public class UserResource implements UserService {
 
     @Override
     public User getUser(String name, String pwd) {
+        System.out.println("SUP "+name+ " "+pwd);
         if(!exists(name,false)){
             throw new WebApplicationException(Status.FORBIDDEN);
         }

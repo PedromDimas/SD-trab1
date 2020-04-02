@@ -7,7 +7,6 @@ import java.util.*;
 import java.util.logging.Logger;
 
 import javax.inject.Singleton;
-import javax.swing.plaf.synth.SynthOptionPaneUI;
 import javax.ws.rs.ProcessingException;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.client.Client;
@@ -47,7 +46,6 @@ public class MessageResource implements MessageService {
 
 	@Override
 	public long postMessage(String pwd, Message msg) {
-		//TODO passwd check
 		Log.info("Received request to register a new message (Sender: " + msg.getSender() + "; Subject: "+msg.getSubject()+")");
 
 		User u = getUser(msg.getSender(),pwd);
@@ -57,10 +55,13 @@ public class MessageResource implements MessageService {
 			Log.info("Message was rejected due to lack of recepients.");
 			throw new WebApplicationException( Status.CONFLICT );
 		}
-
+		String formatedSender;
 		long newID = 0;
 
-		String formatedSender =  u.getDisplayName() + msg.getSender() + u.getDomain();
+		if (msg.getSender().contains("@"))
+			formatedSender = u.getDisplayName() + " <"+msg.getSender()+">";
+		else
+			formatedSender =  u.getDisplayName() + " <"+msg.getSender() +"@"+ u.getDomain()+">";
 
 		msg.setSender( formatedSender);
 
@@ -100,16 +101,20 @@ public class MessageResource implements MessageService {
 		Log.info("Received request for message with id: " + mid +".");
 		Message m = null;
 
+		User u = getUser(user,pwd);
+
 		synchronized (this) {
-			m = allMessages.get(mid);
+			Set<Long> s = userInboxs.get(u.getName()+"@"+u.getDomain());
+			for (Long l: s) {
+				if (mid == l)
+					m = allMessages.get(l);
+			}
 		}
 
 		if(m == null) {  //check if message exists
 			Log.info("Requested message does not exists.");
 			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
 		}
-
-		System.out.println(m.getId() + "CONAÇA");
 
 		Log.info("Returning requested message to user.");
 		return m; //Return message to the client with code HTTP 200
@@ -134,10 +139,10 @@ public class MessageResource implements MessageService {
 		return contents; //Return message contents to the client with code HTTP 200
 	}
 
-
 	@Override
 	public List<Long> getMessages(String user, String pwd) {
 		Log.info("Received request for messages with optional user parameter set to: '" + user + "'");
+		User u = getUser(user,pwd);
 		List<Long> messages = new ArrayList<>();
 		if(user == null) {
 			Log.info("Collecting all messages in server");
@@ -176,17 +181,60 @@ public class MessageResource implements MessageService {
 
 	@Override
 	public void removeFromUserInbox(String user, long mid, String pwd) {
-		throw new Error("Not Implemented...");
+		Message m = null;
+
+		User u = getUser(user,pwd);
+
+		synchronized (this) {
+			Set<Long> s = userInboxs.get(u.getName()+"@"+u.getDomain());
+			for (Long l: s) {
+				if (mid == l)
+					m = allMessages.get(l);
+			}
+		}
+
+		if(m == null) {  //check if message exists
+			Log.info("Requested message does not exists.");
+			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
+		}
+
+		synchronized (this) {
+			Set<Long> s = userInboxs.get(u.getName()+"@"+u.getDomain());
+			s.remove(mid);
+		}
+
+		throw new WebApplicationException(Status.NO_CONTENT);
 	}
 
 	@Override
 	public void deleteMessage(String user, long mid, String pwd) {
+		Message m = null;
 
-		throw new Error("Not Implemented...");
+		User u = getUser(user,pwd);
+
+		synchronized (this) {
+			m = allMessages.get(mid);
+		}
+
+		if(m == null) {  //check if message exists
+			Log.info("Requested message does not exists.");
+			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
+		}
+
+		Set<String> s = m.getDestination();
+
+		for (String d: s) {
+			String user_n = d.split("@")[0];
+		}
+
+
+
+		throw new WebApplicationException(Status.NO_CONTENT);
 	}
 
-	public User getUser(String name, String pwd){
+	public User getUser(String name_unform, String pwd){
 		String url = "";
+		String name = name_unform.split("@")[0];
 		try {
 			String domain = InetAddress.getLocalHost().getCanonicalHostName();
 			URI[] uris = discovery_channel.knownUrisOf(domain);
