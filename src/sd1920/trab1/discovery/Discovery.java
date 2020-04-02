@@ -97,7 +97,8 @@ public class Discovery {
 						if( msgElems.length == 2) {	//periodic announcement
 							System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), 
 									pkt.getAddress().getHostAddress(), msg);
-							URI uri = URI.create(msgElems[1]);
+							String ip = "http://"+msgElems[1].split("/")[2];
+							URI uri = URI.create(ip);
 							if(uriByHost.containsKey(msgElems[0])){
 								uriByHost.get(msgElems[0]).add(uri);
 							}

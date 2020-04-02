@@ -48,7 +48,6 @@ public class UserResource implements UserService {
 
     @Override
     public User getUser(String name, String pwd) {
-
         if(!exists(name,false)){
             throw new WebApplicationException(Status.FORBIDDEN);
         }
