@@ -97,20 +97,20 @@ public class Discovery {
 						if( msgElems.length == 2) {	//periodic announcement
 							System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), 
 									pkt.getAddress().getHostAddress(), msg);
-							String ip = "http://"+msgElems[1].split("/")[2];
-							URI uri = URI.create(ip);
-							if(uriByHost.containsKey(msgElems[0])){
-								uriByHost.get(msgElems[0]).add(uri);
+
+							URI uri = URI.create(pkt.getAddress().getHostAddress());
+							if(uriByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
+								uriByHost.get(pkt.getAddress().getCanonicalHostName()).add(uri);
 							}
 							else {
 								List<URI> list = new ArrayList<>();
 								list.add(uri);
-								uriByHost.put(msgElems[0], list);
+								uriByHost.put(pkt.getAddress().getCanonicalHostName(), list);
 							}
-							if(accessTimeByHost.containsKey(msgElems[0])){
-								accessTimeByHost.remove(msgElems[0]);
+							if(accessTimeByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
+								accessTimeByHost.remove(pkt.getAddress().getCanonicalHostName());
 							}
-							accessTimeByHost.put(msgElems[0], System.currentTimeMillis());
+							accessTimeByHost.put(pkt.getAddress().getCanonicalHostName(), System.currentTimeMillis());
 
 						}
 					} catch (IOException e) {
@@ -131,12 +131,14 @@ public class Discovery {
 	 * 
 	 */
 	public URI[] knownUrisOf(String serviceName) {
-
 		List<URI> ur = uriByHost.get(serviceName);
+
 		URI[] uris = new URI[ur.size()];
 		for (int i = 0; i < ur.size(); i++) {
 			uris[i] = ur.get(i);
 		}
+
+		System.out.println("URIIIS " + uris);
 
 		return uris;
 	}
