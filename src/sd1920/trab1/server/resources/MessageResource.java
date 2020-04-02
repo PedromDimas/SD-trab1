@@ -3,17 +3,11 @@ package sd1920.trab1.server.resources;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 import java.util.logging.Logger;
 
 import javax.inject.Singleton;
+import javax.swing.plaf.synth.SynthOptionPaneUI;
 import javax.ws.rs.ProcessingException;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.client.Client;
@@ -42,16 +36,21 @@ public class MessageResource implements MessageService {
 	private final Map<String,Set<Long>> userInboxs = new HashMap<>();
 
 	private static Logger Log = Logger.getLogger(MessageResource.class.getName());
-	Discovery discovery_channel;
+
+	private Discovery discovery_channel;
 
 	public MessageResource(Discovery discovery_channel) {
 		this.discovery_channel = discovery_channel;
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
 	}
 
+
 	@Override
 	public long postMessage(String pwd, Message msg) {
+		//TODO passwd check
 		Log.info("Received request to register a new message (Sender: " + msg.getSender() + "; Subject: "+msg.getSubject()+")");
+
+		User u = getUser(msg.getSender());
 
 		//Check if message is valid, if not return HTTP CONFLICT (409)
 		if(msg.getSender() == null || msg.getDestination() == null || msg.getDestination().size() == 0) {
@@ -60,6 +59,10 @@ public class MessageResource implements MessageService {
 		}
 
 		long newID = 0;
+
+		String formatedSender =  u.getDisplayName() + msg.getSender() + u.getDomain();
+
+		msg.setSender( formatedSender);
 
 		synchronized (this) {
 
@@ -70,6 +73,7 @@ public class MessageResource implements MessageService {
 			}
 
 			//Add the message to the global list of messages
+			msg.setId(newID);
 			allMessages.put(newID, msg);
 		}
 
@@ -80,7 +84,7 @@ public class MessageResource implements MessageService {
 			//Add the message (identifier) to the inbox of each recipient
 			for(String recipient: msg.getDestination()) {
 				if(!userInboxs.containsKey(recipient)) {
-					userInboxs.put(recipient, new HashSet<>());
+					userInboxs.put(recipient, new HashSet<Long>());
 				}
 				userInboxs.get(recipient).add(newID);
 			}
@@ -104,6 +108,8 @@ public class MessageResource implements MessageService {
 			Log.info("Requested message does not exists.");
 			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
 		}
+
+		System.out.println(m.getId() + "CONAÇA");
 
 		Log.info("Returning requested message to user.");
 		return m; //Return message to the client with code HTTP 200
@@ -141,13 +147,25 @@ public class MessageResource implements MessageService {
 
 		} else {
 			Log.info("Collecting all messages in server for user " + user);
-			synchronized (this) {
-				Set<Long> mids = userInboxs.getOrDefault(user, Collections.emptySet());
-				for(Long l: mids) {
-					Log.info("Adding message with id: " + l + ".");
-					messages.add(l);
-				}
+
+			Set<Long> mids;
+			String domain;
+			String formated = "";
+			try {
+				domain = InetAddress.getLocalHost().getCanonicalHostName();
+				formated = user + "@" + domain;
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
 			}
+
+
+
+			synchronized (this) {
+				mids = userInboxs.getOrDefault(formated, Collections.emptySet());
+			}
+
+			messages.addAll(mids);
+
 
 		}
 		Log.info("Returning message list to user with " + messages.size() + " messages.");
@@ -158,33 +176,30 @@ public class MessageResource implements MessageService {
 
 	@Override
 	public void removeFromUserInbox(String user, long mid, String pwd) {
-		if (verify_pwd(user, pwd)) {
-			List<Long> l = new ArrayList<>(userInboxs.get(user));
-			if (l.contains(mid))
-				l.remove(mid);
-			Set set = new HashSet(l);
-			userInboxs.put(user, set);
-		}
-		else{
-			throw new WebApplicationException(Status.FORBIDDEN);
-		}
+		throw new Error("Not Implemented...");
 	}
 
 	@Override
 	public void deleteMessage(String user, long mid, String pwd) {
-		verify_pwd(user,pwd);
+
 		throw new Error("Not Implemented...");
 	}
 
-	public boolean verify_pwd(String name, String pwd){
+	public User getUser(String name){
+		System.out.println("Conas");
+
 		String url = "";
 		try {
 			String domain = InetAddress.getLocalHost().getCanonicalHostName();
+			System.out.println("domain: "+domain);
 			URI[] uris = discovery_channel.knownUrisOf(domain);
 			url = uris[uris.length-1].toString();
+			System.out.println("url: " + url);
 		} catch (UnknownHostException e) {
 			e.printStackTrace();
 		}
+
+
 
 		ClientConfig config = new ClientConfig();
 		//How much time until timeout on opening the TCP connection to the server
@@ -193,8 +208,8 @@ public class MessageResource implements MessageService {
 		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
 
 		Client client = ClientBuilder.newClient();
-
 		WebTarget target = client.target(url).path(UserService.PATH);
+
 
 		short retries = 0;
 		boolean success = false;
@@ -205,16 +220,13 @@ public class MessageResource implements MessageService {
 				Response r = target.path(name).request()
 						.accept(MediaType.APPLICATION_JSON)
 						.get();
-
 				if( r.getStatus() == Status.OK.getStatusCode() && r.hasEntity() ) {
 					System.out.println("Success:");
 					User u = r.readEntity(User.class);
-					if (u.getPwd().compareTo(pwd) == 0) return true;
-					else return false;
+					return u;
 				} else
-					System.out.println("Error, HTTP error status: " + r.getStatus() );
+					throw new WebApplicationException(r.getStatus());
 
-				success = true;
 			} catch ( ProcessingException pe ) { //Error in communication with server
 				System.out.println("Timeout occurred.");
 				pe.printStackTrace(); //Could be removed
@@ -227,6 +239,7 @@ public class MessageResource implements MessageService {
 				System.out.println("Retrying to execute request.");
 			}
 		}
-		return false;
+		throw new WebApplicationException(Status.FORBIDDEN);
 	}
+
 }
