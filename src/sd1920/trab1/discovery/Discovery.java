@@ -100,7 +100,8 @@ public class Discovery {
 
 							URI uri = URI.create(pkt.getAddress().getHostAddress());
 							if(uriByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
-								uriByHost.get(pkt.getAddress().getCanonicalHostName()).add(uri);
+								if(!uriByHost.get(pkt.getAddress().getCanonicalHostName()).contains(uri))
+									uriByHost.get(pkt.getAddress().getCanonicalHostName()).add(uri);
 							}
 							else {
 								List<URI> list = new ArrayList<>();
@@ -137,8 +138,6 @@ public class Discovery {
 		for (int i = 0; i < ur.size(); i++) {
 			uris[i] = ur.get(i);
 		}
-
-		System.out.println("URIIIS " + uris);
 
 		return uris;
 	}
