@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.URI;
+import java.sql.SQLOutput;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -63,7 +64,7 @@ public class Discovery {
 	 * Starts sending service announcements at regular intervals... 
 	 */
 	public void start() {
-		Log.info(String.format("Starting Discovery announcements on: %s for: %s -> %s", addr, serviceName, serviceURI));
+		Log.info(String.format("Starting Discovery announcements on: %s for: %s -> %s\n", addr, serviceName, serviceURI));
 		
 		byte[] announceBytes = String.format("%s%s%s", serviceName, DELIMITER, serviceURI).getBytes();
 		DatagramPacket announcePkt = new DatagramPacket(announceBytes, announceBytes.length, addr);
@@ -129,8 +130,15 @@ public class Discovery {
 	 * 
 	 */
 	public URI[] knownUrisOf(String serviceName) {
-		return (URI[])uriByHost.get(serviceName).toArray();
-	}	
+
+		List<URI> ur = uriByHost.get(serviceName);
+		URI[] uris = new URI[ur.size()];
+		for (int i = 0; i < ur.size(); i++) {
+			uris[i] = ur.get(i);
+		}
+
+		return uris;
+	}
 	
 	// Main just for testing purposes
 	public static void main( String[] args) throws Exception {

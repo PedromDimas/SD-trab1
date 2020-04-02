@@ -50,7 +50,7 @@ public class MessageResource implements MessageService {
 		//TODO passwd check
 		Log.info("Received request to register a new message (Sender: " + msg.getSender() + "; Subject: "+msg.getSubject()+")");
 
-		User u = getUser(msg.getSender());
+		User u = getUser(msg.getSender(),pwd);
 
 		//Check if message is valid, if not return HTTP CONFLICT (409)
 		if(msg.getSender() == null || msg.getDestination() == null || msg.getDestination().size() == 0) {
@@ -185,16 +185,14 @@ public class MessageResource implements MessageService {
 		throw new Error("Not Implemented...");
 	}
 
-	public User getUser(String name){
+	public User getUser(String name, String pwd){
 		System.out.println("Conas");
 
 		String url = "";
 		try {
 			String domain = InetAddress.getLocalHost().getCanonicalHostName();
-			System.out.println("domain: "+domain);
 			URI[] uris = discovery_channel.knownUrisOf(domain);
 			url = uris[uris.length-1].toString();
-			System.out.println("url: " + url);
 		} catch (UnknownHostException e) {
 			e.printStackTrace();
 		}
@@ -207,19 +205,21 @@ public class MessageResource implements MessageService {
 		//How much time to wait for the reply of the server after sending the request
 		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
 
-		Client client = ClientBuilder.newClient();
-		WebTarget target = client.target(url).path(UserService.PATH);
+		Client client = ClientBuilder.newClient(config);
+		WebTarget target = client.target(url).path(UserService.PATH).path(name).queryParam("pwd",pwd);
+
+		System.out.println("PATH + " + target);
 
 
 		short retries = 0;
-		boolean success = false;
 
-		while(!success && retries < GetMessageClient.MAX_RETRIES) {
+		while(retries < GetMessageClient.MAX_RETRIES) {
 			try {
 
-				Response r = target.path(name).request()
+				Response r = target.request()
 						.accept(MediaType.APPLICATION_JSON)
 						.get();
+				System.out.println("RESPONSE + " + r);
 				if( r.getStatus() == Status.OK.getStatusCode() && r.hasEntity() ) {
 					System.out.println("Success:");
 					User u = r.readEntity(User.class);
@@ -229,11 +229,12 @@ public class MessageResource implements MessageService {
 
 			} catch ( ProcessingException pe ) { //Error in communication with server
 				System.out.println("Timeout occurred.");
-				pe.printStackTrace(); //Could be removed
+				//pe.printStackTrace(); //Could be removed
 				retries ++;
 				try {
 					Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
 				} catch (InterruptedException e) {
+					System.out.println("interrupted");
 					//Nothing to be done here, if this happens we will just retry sooner.
 				}
 				System.out.println("Retrying to execute request.");
