@@ -1,4 +1,4 @@
-package sd1920.trab1.api;
+package sd1920.trab1.discovery;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.URI;
+import java.sql.SQLOutput;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,7 +54,7 @@ public class Discovery {
 	 * @param  serviceName the name of the service to announce
 	 * @param  serviceURI an uri string - representing the contact endpoint of the service being announced
 	 */
-	Discovery( InetSocketAddress addr, String serviceName, String serviceURI) {
+	public Discovery(InetSocketAddress addr, String serviceName, String serviceURI) {
 		this.addr = addr;
 		this.serviceName = serviceName;
 		this.serviceURI  = serviceURI;
@@ -63,7 +64,7 @@ public class Discovery {
 	 * Starts sending service announcements at regular intervals... 
 	 */
 	public void start() {
-		Log.info(String.format("Starting Discovery announcements on: %s for: %s -> %s", addr, serviceName, serviceURI));
+		Log.info(String.format("Starting Discovery announcements on: %s for: %s -> %s\n", addr, serviceName, serviceURI));
 		
 		byte[] announceBytes = String.format("%s%s%s", serviceName, DELIMITER, serviceURI).getBytes();
 		DatagramPacket announcePkt = new DatagramPacket(announceBytes, announceBytes.length, addr);
@@ -96,19 +97,21 @@ public class Discovery {
 						if( msgElems.length == 2) {	//periodic announcement
 							System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), 
 									pkt.getAddress().getHostAddress(), msg);
-							URI uri = URI.create(msgElems[1]);
-							if(uriByHost.containsKey(msgElems[0])){
-								uriByHost.get(msgElems[0]).add(uri);
+
+							URI uri = URI.create(pkt.getAddress().getHostAddress());
+							if(uriByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
+								if(!uriByHost.get(pkt.getAddress().getCanonicalHostName()).contains(uri))
+									uriByHost.get(pkt.getAddress().getCanonicalHostName()).add(uri);
 							}
 							else {
 								List<URI> list = new ArrayList<>();
 								list.add(uri);
-								uriByHost.put(msgElems[0], list);
+								uriByHost.put(pkt.getAddress().getCanonicalHostName(), list);
 							}
-							if(accessTimeByHost.containsKey(msgElems[0])){
-								accessTimeByHost.remove(msgElems[0]);
+							if(accessTimeByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
+								accessTimeByHost.remove(pkt.getAddress().getCanonicalHostName());
 							}
-							accessTimeByHost.put(msgElems[0], System.currentTimeMillis());
+							accessTimeByHost.put(pkt.getAddress().getCanonicalHostName(), System.currentTimeMillis());
 
 						}
 					} catch (IOException e) {
@@ -129,8 +132,15 @@ public class Discovery {
 	 * 
 	 */
 	public URI[] knownUrisOf(String serviceName) {
-		return (URI[])uriByHost.get(serviceName).toArray();
-	}	
+		List<URI> ur = uriByHost.get(serviceName);
+
+		URI[] uris = new URI[ur.size()];
+		for (int i = 0; i < ur.size(); i++) {
+			uris[i] = ur.get(i);
+		}
+
+		return uris;
+	}
 	
 	// Main just for testing purposes
 	public static void main( String[] args) throws Exception {
