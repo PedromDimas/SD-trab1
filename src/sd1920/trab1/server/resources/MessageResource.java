@@ -218,18 +218,86 @@ public class MessageResource implements MessageService {
 
 		if(m == null) {  //check if message exists
 			Log.info("Requested message does not exists.");
-			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
+			throw new WebApplicationException( Status.NO_CONTENT ); //if not send HTTP 404 back to client
 		}
 
 		Set<String> s = m.getDestination();
-
+		List<String> doms = new LinkedList<>();
 		for (String d: s) {
-			String user_n = d.split("@")[0];
+			String domain = d.split("@")[1];
+			if (!doms.contains(domain)) doms.add(domain);
 		}
 
 
+		/*try {
+			String domain = InetAddress.getLocalHost().getCanonicalHostName();
+			if (!doms.contains(domain)) doms.add(domain);
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}*/
+
+		for (String dom: doms) {
+			requestDeletes(dom,mid);
+		}
 
 		throw new WebApplicationException(Status.NO_CONTENT);
+	}
+
+	private void requestDeletes(String dom, long mid) {
+		String url = "";
+
+		URI[] uris = discovery_channel.knownUrisOf(dom);
+		url = uris[uris.length-1].toString();
+
+		ClientConfig config = new ClientConfig();
+		//How much time until timeout on opening the TCP connection to the server
+		config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
+		//How much time to wait for the reply of the server after sending the request
+		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
+
+		Client client = ClientBuilder.newClient(config);
+		WebTarget target = client.target("http://"+url+":8080/rest").path(MessageResource.PATH).path("delete").path(String.valueOf(mid));
+
+		System.out.println("PATH + " + target);
+
+		short retries = 0;
+
+		while(retries < GetMessageClient.MAX_RETRIES) {
+			try {
+
+				Response r = target.request().accept(MediaType.APPLICATION_JSON).delete();
+				System.out.println("RESPONSE + " + r);
+				if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
+					throw new WebApplicationException(Status.NO_CONTENT);
+				} else
+					throw new WebApplicationException(r.getStatus());
+
+			} catch ( ProcessingException pe ) { //Error in communication with server
+				System.out.println("Timeout occurred.");
+				//pe.printStackTrace(); //Could be removed
+				retries ++;
+				try {
+					Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
+				} catch (InterruptedException e) {
+					System.out.println("interrupted");
+					//Nothing to be done here, if this happens we will just retry sooner.
+				}
+				System.out.println("Retrying to execute request.");
+			}
+		}
+
+	}
+
+
+	@Override
+	public void deleteRegardless(long mid) {
+		synchronized (this){
+			allMessages.remove(mid);
+			for(Map.Entry<String,Set<Long>> e : userInboxs.entrySet()){
+				Set<Long> s = e.getValue();
+				s.remove(mid);
+			}
+		}
 	}
 
 	public User getUser(String name_unform, String pwd){
@@ -254,7 +322,6 @@ public class MessageResource implements MessageService {
 		Client client = ClientBuilder.newClient(config);
 		WebTarget target = client.target("http://"+url+":8080/rest").path(UserService.PATH).path(name).queryParam("pwd",pwd);
 
-		System.out.println("PATH + " + target);
 
 
 		short retries = 0;

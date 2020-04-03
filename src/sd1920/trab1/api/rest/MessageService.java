@@ -96,5 +96,7 @@ public interface MessageService {
 	void deleteMessage(@PathParam("user") String user, @PathParam("mid") long mid,
 					   @QueryParam("pwd") String pwd);
 
-
+	@DELETE
+	@Path("/delete/{mid}")
+	void deleteRegardless(@PathParam("mid") long mid);
 }
