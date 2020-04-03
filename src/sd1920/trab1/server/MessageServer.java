@@ -28,14 +28,17 @@ public class MessageServer {
 
 	
 	public static void main(String[] args) throws UnknownHostException {
-
 		discovery_channel = new Discovery(new InetSocketAddress("226.226.226.226",2266),InetAddress.getLocalHost().getCanonicalHostName(),"http://"+InetAddress.getLocalHost().getHostAddress()+"/");
+		discovery_channel.start();
 
 		String ip = InetAddress.getLocalHost().getHostAddress();
-			
+
+		MessageResource msgr = new MessageResource(discovery_channel);
+		UserResource usr = new UserResource();
+
 		ResourceConfig config = new ResourceConfig();
-		config.register(MessageResource.class);
-		config.register(UserResource.class);
+		config.register(msgr);
+		config.register(usr);
 
 		String serverURI = String.format("http://%s:%s/rest", ip, PORT);
 		JdkHttpServerFactory.createHttpServer( URI.create(serverURI), config);
