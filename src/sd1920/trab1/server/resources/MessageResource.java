@@ -33,6 +33,7 @@ public class MessageResource implements MessageService {
 
 	private final Map<Long,Message> allMessages = new HashMap<>();
 	private final Map<String,Set<Long>> userInboxs = new HashMap<>();
+	private final Map<String,Set<Long>> userOutboxs = new HashMap<>();
 
 	private static Logger Log = Logger.getLogger(MessageResource.class.getName());
 
@@ -55,6 +56,7 @@ public class MessageResource implements MessageService {
 			Log.info("Message was rejected due to lack of recepients.");
 			throw new WebApplicationException( Status.CONFLICT );
 		}
+
 		String formatedSender;
 		long newID = 0;
 
@@ -64,6 +66,8 @@ public class MessageResource implements MessageService {
 			formatedSender =  u.getDisplayName() + " <"+msg.getSender() +"@"+ u.getDomain()+">";
 
 		msg.setSender( formatedSender);
+
+
 
 		synchronized (this) {
 
@@ -81,6 +85,13 @@ public class MessageResource implements MessageService {
 		Log.info("Created new message with id: " + newID);
 		MessageUtills.printMessage(allMessages.get(newID));
 
+		synchronized (this){
+			if(!userOutboxs.containsKey(u.getName())) {
+				userOutboxs.put(u.getName(), new HashSet<Long>());
+			}
+			userOutboxs.get(u.getName()).add(newID);
+		}
+
 		synchronized (this) {
 			//Add the message (identifier) to the inbox of each recipient
 			for(String recipient: msg.getDestination()) {
@@ -88,8 +99,11 @@ public class MessageResource implements MessageService {
 					userInboxs.put(recipient, new HashSet<Long>());
 				}
 				userInboxs.get(recipient).add(newID);
+
 			}
 		}
+
+		//todo pedido rest para mandar pa todos os servers
 
 		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
 		Log.info("Recorded message with identifier: " + newID);
@@ -170,6 +184,14 @@ public class MessageResource implements MessageService {
 			}
 
 			messages.addAll(mids);
+
+
+			synchronized (this) {
+				mids = userOutboxs.getOrDefault(u.getName(), Collections.emptySet());
+			}
+
+			messages.addAll(mids);
+
 
 
 		}
@@ -302,6 +324,10 @@ public class MessageResource implements MessageService {
 		synchronized (this){
 			allMessages.remove(mid);
 			for(Map.Entry<String,Set<Long>> e : userInboxs.entrySet()){
+				Set<Long> s = e.getValue();
+				s.remove(mid);
+			}
+			for(Map.Entry<String,Set<Long>> e : userOutboxs.entrySet()){
 				Set<Long> s = e.getValue();
 				s.remove(mid);
 			}
