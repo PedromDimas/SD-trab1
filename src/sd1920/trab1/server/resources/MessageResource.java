@@ -216,8 +216,16 @@ public class MessageResource implements MessageService {
 			m = allMessages.get(mid);
 		}
 
+
 		if(m == null) {  //check if message exists
 			Log.info("Requested message does not exists.");
+			throw new WebApplicationException( Status.NO_CONTENT ); //if not send HTTP 404 back to client
+		}
+
+		String[] pre = m.getSender().split(" ");
+		String name = pre[pre.length-1].split("@")[0].substring(1);
+
+		if(!(name.equals(u.getName()))){
 			throw new WebApplicationException( Status.NO_CONTENT ); //if not send HTTP 404 back to client
 		}
 
