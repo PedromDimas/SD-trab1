@@ -6,7 +6,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.URI;
-import java.sql.SQLOutput;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -94,24 +93,25 @@ public class Discovery {
 						ms.receive(pkt);
 						String msg = new String( pkt.getData(), 0, pkt.getLength());
 						String[] msgElems = msg.split(DELIMITER);
+
 						if( msgElems.length == 2) {	//periodic announcement
 							System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), 
 									pkt.getAddress().getHostAddress(), msg);
 
-							URI uri = URI.create(pkt.getAddress().getHostAddress());
-							if(uriByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
-								if(!uriByHost.get(pkt.getAddress().getCanonicalHostName()).contains(uri))
-									uriByHost.get(pkt.getAddress().getCanonicalHostName()).add(uri);
+							URI uri = URI.create(msgElems[1]);
+							if(uriByHost.containsKey(msgElems[0])){
+								if(!uriByHost.get(msgElems[0]).contains(uri))
+									uriByHost.get(msgElems[0]).add(uri);
 							}
 							else {
 								List<URI> list = new ArrayList<>();
 								list.add(uri);
-								uriByHost.put(pkt.getAddress().getCanonicalHostName(), list);
+								uriByHost.put(msgElems[0], list);
 							}
-							if(accessTimeByHost.containsKey(pkt.getAddress().getCanonicalHostName())){
-								accessTimeByHost.remove(pkt.getAddress().getCanonicalHostName());
+							if(accessTimeByHost.containsKey(msgElems[0])){
+								accessTimeByHost.remove(msgElems[0]);
 							}
-							accessTimeByHost.put(pkt.getAddress().getCanonicalHostName(), System.currentTimeMillis());
+							accessTimeByHost.put(msgElems[0], System.currentTimeMillis());
 
 						}
 					} catch (IOException e) {
