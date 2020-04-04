@@ -28,7 +28,7 @@ public class MessageServer {
 
 	
 	public static void main(String[] args) throws UnknownHostException {
-		discovery_channel = new Discovery(new InetSocketAddress("226.226.226.226",2266),InetAddress.getLocalHost().getCanonicalHostName(),"http://"+InetAddress.getLocalHost().getHostAddress()+"/");
+		discovery_channel = new Discovery(new InetSocketAddress("226.226.226.226",2266),InetAddress.getLocalHost().getCanonicalHostName(),"http://"+InetAddress.getLocalHost().getHostAddress()+":8080/rest");
 		discovery_channel.start();
 
 		String ip = InetAddress.getLocalHost().getHostAddress();

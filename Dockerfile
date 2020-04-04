@@ -1,5 +1,5 @@
 # base image - an image with openjdk  8
-FROM openjdk:8
+FROM nunopreguica/sd1920tpbase
 
 # working directory inside docker image
 WORKDIR /home/sd

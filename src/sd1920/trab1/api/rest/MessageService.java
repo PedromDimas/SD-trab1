@@ -99,4 +99,10 @@ public interface MessageService {
 	@DELETE
 	@Path("/delete/{mid}")
 	void deleteRegardless(@PathParam("mid") long mid);
+
+	@POST
+	@Path("/add/{domain}")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	void recieve_inboxes(@PathParam("domain")String domain , Message msg);
 }
