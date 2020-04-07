@@ -348,6 +348,7 @@ public class MessageResource implements MessageService {
 		throw new WebApplicationException(Status.OK);
 	}
 
+
 	public User getUser(String name_unform, String pwd){
 		String url = "";
 		String name = name_unform.split("@")[0];
