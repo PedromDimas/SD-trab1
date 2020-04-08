@@ -4,6 +4,9 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 import java.util.logging.Logger;
 
 import javax.inject.Singleton;
@@ -26,12 +29,15 @@ import sd1920.trab1.api.rest.UserService;
 import sd1920.trab1.clients.GetMessageClient;
 import sd1920.trab1.clients.utils.MessageUtills;
 import sd1920.trab1.discovery.Discovery;
+import sd1920.trab1.helpers.RequestHelper;
 
 @Singleton
 public class MessageResource implements MessageService {
 
 	private Random randomNumberGenerator;
 
+	private final BlockingQueue<RequestHelper> queue = new SynchronousQueue<>();
+	private ClientConfig config;
 	private final Map<Long,Message> allMessages = new HashMap<>();
 	private final Map<String,Set<Long>> userInboxs = new HashMap<>();
 
@@ -42,6 +48,12 @@ public class MessageResource implements MessageService {
 	public MessageResource(Discovery discovery_channel) {
 		this.discovery_channel = discovery_channel;
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
+		this.spinThreads();
+		config = new ClientConfig();
+		//How much time until timeout on opening the TCP connection to the server
+		config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
+		//How much time to wait for the reply of the server after sending the request
+		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
 	}
 
 
@@ -57,6 +69,7 @@ public class MessageResource implements MessageService {
 			Log.info("Message was rejected due to lack of recepients.");
 			throw new WebApplicationException( Status.CONFLICT );
 		}
+
 
 		String formatedSender;
 		long newID = 0;
@@ -86,11 +99,15 @@ public class MessageResource implements MessageService {
 				allMessages.put(newID, msg);
 		}
 
+
 		Log.info("Created new message with id: " + newID);
 		MessageUtills.printMessage(allMessages.get(newID));
 
-
-		requestPost(msg);
+		try {
+			requestPost(msg);
+		} catch (InterruptedException e) {
+			System.out.println("Interrupted");
+		}
 
 		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
 		Log.info("Recorded message with identifier: " + newID);
@@ -171,7 +188,6 @@ public class MessageResource implements MessageService {
 		return messages;
 	}
 
-
 	@Override
 	public void removeFromUserInbox(String user, long mid, String pwd) {
 		Message m = null;
@@ -246,57 +262,32 @@ public class MessageResource implements MessageService {
 		}*/
 
 		for (String dom: doms) {
-			requestDeletes(dom,mid);
+			try {
+				requestDeletes(dom, mid);
+			} catch (InterruptedException e) {
+				System.out.println("Interrupted");
+			}
 		}
 
 		throw new WebApplicationException(Status.NO_CONTENT);
 	}
 
-	private void requestDeletes(String dom, long mid) {
+	private void requestDeletes(String dom, long mid) throws InterruptedException {
 		String url = "";
 
 		URI[] uris = discovery_channel.knownUrisOf(dom);
 		url = uris[uris.length-1].toString();
 
-		ClientConfig config = new ClientConfig();
-		//How much time until timeout on opening the TCP connection to the server
-		config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
-		//How much time to wait for the reply of the server after sending the request
-		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
 
 		Client client = ClientBuilder.newClient(config);
 		WebTarget target = client.target(url).path(MessageResource.PATH).path("delete").path(String.valueOf(mid));
 
-		System.out.println("PATH + " + target);
+		RequestHelper rh = new RequestHelper(url,client,target,mid);
 
-		short retries = 0;
 
-		while(retries < GetMessageClient.MAX_RETRIES) {
-			try {
-
-				Response r = target.request().accept(MediaType.APPLICATION_JSON).delete();
-				System.out.println("RESPONSE + " + r);
-				if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
-					break;
-				} else
-					throw new WebApplicationException(r.getStatus());
-
-			} catch ( ProcessingException pe ) { //Error in communication with server
-				System.out.println("Timeout occurred.");
-				//pe.printStackTrace(); //Could be removed
-				retries ++;
-				try {
-					Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
-				} catch (InterruptedException e) {
-					System.out.println("interrupted");
-					//Nothing to be done here, if this happens we will just retry sooner.
-				}
-				System.out.println("Retrying to execute request.");
-			}
-		}
+			queue.put(rh);
 
 	}
-
 
 	@Override
 	public void deleteRegardless(long mid) {
@@ -348,7 +339,6 @@ public class MessageResource implements MessageService {
 		throw new WebApplicationException(Status.OK);
 	}
 
-
 	public User getUser(String name_unform, String pwd){
 		String url = "";
 		String name = name_unform.split("@")[0];
@@ -360,13 +350,6 @@ public class MessageResource implements MessageService {
 			e.printStackTrace();
 		}
 
-
-
-		ClientConfig config = new ClientConfig();
-		//How much time until timeout on opening the TCP connection to the server
-		config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
-		//How much time to wait for the reply of the server after sending the request
-		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
 
 		Client client = ClientBuilder.newClient(config);
 		WebTarget target = client.target(url).path(UserService.PATH).path(name).queryParam("pwd",pwd);
@@ -405,8 +388,7 @@ public class MessageResource implements MessageService {
 		throw new WebApplicationException(Status.FORBIDDEN);
 	}
 
-
-	private void requestPost(Message msg){
+	private void requestPost(Message msg) throws InterruptedException {
 		String url = "";
 
 		List<String> domains = new ArrayList<>();
@@ -420,45 +402,109 @@ public class MessageResource implements MessageService {
 			URI[] uris = discovery_channel.knownUrisOf(domain);
 			url = uris[uris.length-1].toString();
 
-			ClientConfig config = new ClientConfig();
-			//How much time until timeout on opening the TCP connection to the server
-			config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
-			//How much time to wait for the reply of the server after sending the request
-			config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
-
 			Client client = ClientBuilder.newClient(config);
 			WebTarget target = client.target(url).path(MessageService.PATH).path("add").path(domain);
 
-			System.out.println("PATH + " + target);
+			System.out.println("Path: " + target);
 
-			short retries = 0;
+			RequestHelper rh = new RequestHelper(url, client,target,msg);
 
-			while(retries < GetMessageClient.MAX_RETRIES) {
-				try {
-					Response r = target.request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(msg, MediaType.APPLICATION_JSON));
-					if( r.getStatus() == Status.OK.getStatusCode()) {
-						break;
-					} else
-						throw new WebApplicationException(r.getStatus());
 
-				} catch ( ProcessingException pe ) { //Error in communication with server
-					System.out.println("Timeout occurred.");
-					//pe.printStackTrace(); //Could be removed
-					retries ++;
-					try {
-						Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
-					} catch (InterruptedException e) {
-						System.out.println("interrupted");
-						//Nothing to be done here, if this happens we will just retry sooner.
-					}
-					System.out.println("Retrying to execute request.");
-				}
-			}
+				queue.put(rh);
 
 
 		}
 
 	}
 
+	private void spinThreads(){
+		BlockingQueue<RequestHelper> lq = new LinkedBlockingQueue<>();
 
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelper rh = queue.take();
+					//try to send non stop
+					for(;;){
+						try {
+							Response r;
+							if (rh.getMethod().equals("POST")) {
+								System.out.println("Le Post");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
+								if( r.getStatus() == Status.OK.getStatusCode()) {
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+							else {
+								System.out.println("Le Delete");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
+								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+						} catch ( ProcessingException pe ) {
+							System.out.println("Timeout occurred.");
+							try {
+								lq.put(rh);
+								Thread.sleep( GetMessageClient.RETRY_PERIOD );
+								break;
+							} catch (InterruptedException e) {
+								System.out.println("interrupted");
+							}
+							System.out.println("Retrying to execute request.");
+						}
+					}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+		}).start();
+
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelper rh = lq.take();
+					//try to send non stop
+					for(;;){
+						try {
+							Response r;
+							if (rh.getMethod().equals("POST")) {
+								System.out.println("Le Post");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
+								if( r.getStatus() == Status.OK.getStatusCode()) {
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+							else {
+								System.out.println("Le Delete");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
+								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+						} catch ( ProcessingException pe ) {
+							System.out.println("Timeout occurred.");
+							try {
+								Thread.sleep( GetMessageClient.RETRY_PERIOD );
+							} catch (InterruptedException e) {
+								System.out.println("interrupted");
+							}
+							System.out.println("Retrying to execute request.");
+						}
+					}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+		}).start();
+	}
 }

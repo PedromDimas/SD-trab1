@@ -16,12 +16,11 @@ import javax.ws.rs.core.Response.Status;
 @Singleton
 public class UserResource implements UserService {
 
-    private final Map<String, User> userMap;
+    private final Map<String, User> userMap = new HashMap<>();
 
     private static Logger Log = Logger.getLogger(MessageResource.class.getName());
 
     public UserResource(){
-        userMap = new HashMap<>();
     }
 
     @Override
