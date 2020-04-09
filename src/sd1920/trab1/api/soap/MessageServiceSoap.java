@@ -1,5 +1,6 @@
 package sd1920.trab1.api.soap;
 
+import java.io.IOException;
 import java.util.List;
 
 import javax.jws.WebMethod;
@@ -30,7 +31,7 @@ public interface MessageServiceSoap {
 	 * @throws MessagesException in case of error.
 	 */
 	@WebMethod
-	public long postMessage(String pwd, Message msg) throws MessagesException;
+	public long postMessage(String pwd, Message msg) throws MessagesException, IOException;
 
 	/**
 	 * Obtains the message identified by mid of user user
@@ -75,4 +76,10 @@ public interface MessageServiceSoap {
 	 */
 	@WebMethod
 	void deleteMessage(String user, String pwd, long mid) throws MessagesException;
+
+	@WebMethod
+	public long	recieve_inboxes(String domain, Message msg);
+
+	@WebMethod
+	public void deleteRegardless(long mid);
 }

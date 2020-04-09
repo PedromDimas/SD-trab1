@@ -254,12 +254,6 @@ public class MessageResource implements MessageService {
 
 		System.out.println("DOMS " + doms);
 
-		/*try {
-			String domain = InetAddress.getLocalHost().getCanonicalHostName();
-			if (!doms.contains(domain)) doms.add(domain);
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}*/
 
 		for (String dom: doms) {
 			try {
@@ -269,7 +263,6 @@ public class MessageResource implements MessageService {
 			}
 		}
 
-		throw new WebApplicationException(Status.NO_CONTENT);
 	}
 
 	private void requestDeletes(String dom, long mid) throws InterruptedException {
@@ -410,7 +403,7 @@ public class MessageResource implements MessageService {
 			RequestHelper rh = new RequestHelper(url, client,target,msg);
 
 
-				queue.put(rh);
+			queue.put(rh);
 
 
 		}
