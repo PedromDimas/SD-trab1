@@ -484,12 +484,14 @@ public class MessageResource implements MessageService {
 							}
 						} catch ( ProcessingException pe ) {
 							System.out.println("Timeout occurred.");
+							lq.put(rh);
 							try {
 								Thread.sleep( GetMessageClient.RETRY_PERIOD );
 							} catch (InterruptedException e) {
 								System.out.println("interrupted");
 							}
 							System.out.println("Retrying to execute request.");
+							break;
 						}
 					}
 
