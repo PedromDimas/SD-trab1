@@ -6,7 +6,7 @@ if [ $EUID != 0 ]; then
 fi
 
 echo "****************************************
-**********Compiling your shit!**********
+**********Compiling your code!**********
 ****************************************"
 
 mvn clean
@@ -22,7 +22,7 @@ docker network create -d bridge sdnet
 
 rm out.txt
 
-sh test-sd-tp1.sh -image sd1920-trab1-52919-52858 -sleep 2 -log ALL -test 12a  |tee out.txt
+sh test-sd-tp1.sh -image sd1920-trab1-52919-52858 -sleep 20 -log ALL -test 11a |tee out.txt
 
 sh clean_docker.sh
 

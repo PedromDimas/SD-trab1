@@ -1,8 +1,11 @@
 package sd1920.trab1.server.resources;
 
-import java.net.InetAddress;
+
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
-import java.net.UnknownHostException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -19,17 +22,23 @@ import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
+import javax.xml.namespace.QName;
+import javax.xml.ws.BindingProvider;
+import javax.xml.ws.Service;
+import javax.xml.ws.WebServiceException;
 
+import com.sun.xml.ws.client.BindingProviderProperties;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientProperties;
 import sd1920.trab1.api.Message;
 import sd1920.trab1.api.User;
 import sd1920.trab1.api.rest.MessageService;
 import sd1920.trab1.api.rest.UserService;
+import sd1920.trab1.api.soap.MessageServiceSoap;
 import sd1920.trab1.clients.GetMessageClient;
-import sd1920.trab1.clients.utils.MessageUtills;
 import sd1920.trab1.discovery.Discovery;
 import sd1920.trab1.helpers.RequestHelper;
+import sd1920.trab1.helpers.RequestHelperSoap;
 
 @Singleton
 public class MessageResource implements MessageService {
@@ -44,10 +53,12 @@ public class MessageResource implements MessageService {
 	private static Logger Log = Logger.getLogger(MessageResource.class.getName());
 
 	private Discovery discovery_channel;
+	private String my_domain;
 
-	public MessageResource(Discovery discovery_channel) {
+	public MessageResource(String ip, Discovery discovery_channel) {
 		this.discovery_channel = discovery_channel;
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
+		this.my_domain = ip;
 		this.spinThreads();
 		config = new ClientConfig();
 		//How much time until timeout on opening the TCP connection to the server
@@ -59,25 +70,19 @@ public class MessageResource implements MessageService {
 
 	@Override
 	public long postMessage(String pwd, Message msg) {
-
-		Log.info("Received request to register a new message (Sender: " + msg.getSender() + "; Subject: "+msg.getSubject()+")");
-
 		User u = getUser(msg.getSender(),pwd);
 
-		//Check if message is valid, if not return HTTP CONFLICT (409)
 		if(msg.getSender() == null || msg.getDestination() == null || msg.getDestination().size() == 0) {
-			Log.info("Message was rejected due to lack of recepients.");
 			throw new WebApplicationException( Status.CONFLICT );
 		}
-
 
 		String formatedSender;
 		long newID = 0;
 
 		if (msg.getSender().contains("@"))
-			formatedSender = u.getDisplayName() + " <"+msg.getSender()+">";
+			formatedSender = String.format("%s <%s>",u.getDisplayName(),msg.getSender());
 		else
-			formatedSender =  u.getDisplayName() + " <"+msg.getSender() +"@"+ u.getDomain()+">";
+			formatedSender = String.format("%s <%s@%s>",u.getDisplayName(),msg.getSender(),u.getDomain());
 
 		msg.setSender( formatedSender);
 
@@ -89,19 +94,13 @@ public class MessageResource implements MessageService {
 			while(allMessages.containsKey(newID)) {
 				newID = Math.abs(randomNumberGenerator.nextLong());
 			}
-
-			//Add the message to the global list of messages
-			msg.setId(newID);
-		}
-
-		synchronized (this) {
-			if (!allMessages.containsKey(newID))
+			if (!allMessages.containsKey(newID)){
 				allMessages.put(newID, msg);
+			}
+
 		}
 
-
-		Log.info("Created new message with id: " + newID);
-		MessageUtills.printMessage(allMessages.get(newID));
+		msg.setId(newID);
 
 		try {
 			requestPost(msg);
@@ -109,8 +108,6 @@ public class MessageResource implements MessageService {
 			System.out.println("Interrupted");
 		}
 
-		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
-		Log.info("Recorded message with identifier: " + newID);
 		return newID;
 	}
 
@@ -122,69 +119,38 @@ public class MessageResource implements MessageService {
 		User u = getUser(user,pwd);
 
 		synchronized (this) {
-			Set<Long> s = userInboxs.get(u.getName());
-			for (Long l: s) {
-				if (mid == l)
+			Set<Long> s = userInboxs.getOrDefault(u.getName(),Collections.emptySet());
+			for (Long l : s) {
+				if (mid == l) {
 					m = allMessages.get(l);
+				}
 			}
 		}
 
-		if(m == null) {  //check if message exists
-			Log.info("Requested message does not exists.");
-			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
+		if(m == null) {
+			throw new WebApplicationException( Status.NOT_FOUND );
 		}
-
-		Log.info("Returning requested message to user.");
-		return m; //Return message to the client with code HTTP 200
-	}
-
-	public byte[] getMessageBody(long mid) {
-		Log.info("Received request for body of message with id: " + mid +".");
-		byte[] contents = null;
-		synchronized (this) {
-			Message m = allMessages.get(mid);
-			if(m != null)
-				contents = m.getContents();
-		}
-
-
-		if(contents != null) { //implicitaly checks if message exists
-			Log.info("Requested message does not exists.");
-			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
-		}
-
-		Log.info("Returning requested message body to user.");
-		return contents; //Return message contents to the client with code HTTP 200
+		return m;
 	}
 
 	@Override
 	public List<Long> getMessages(String user, String pwd) {
-		Log.info("Received request for messages with optional user parameter set to: '" + user + "'");
 		User u = getUser(user,pwd);
+
 		List<Long> messages = new ArrayList<>();
+
 		if(user == null) {
-			Log.info("Collecting all messages in server");
 			synchronized (this) {
 				messages.addAll(allMessages.keySet());
 			}
 
 		} else {
-			Log.info("Collecting all messages in server for user " + user);
-
 			Set<Long> mids;
-
-
 			synchronized (this) {
 				mids = userInboxs.getOrDefault(user, Collections.emptySet());
 			}
-
 			messages.addAll(mids);
-
-
-
 		}
-		Log.info("Returning message list to user with " + messages.size() + " messages.");
-
 		return messages;
 	}
 
@@ -195,16 +161,15 @@ public class MessageResource implements MessageService {
 		User u = getUser(user,pwd);
 
 		synchronized (this) {
-			Set<Long> s = userInboxs.get(u.getName());
+			Set<Long> s = userInboxs.getOrDefault(u.getName(),Collections.emptySet());
 			for (Long l: s) {
 				if (mid == l)
 					m = allMessages.get(l);
 			}
 		}
 
-		if(m == null) {  //check if message exists
-			Log.info("Requested message does not exists.");
-			throw new WebApplicationException( Status.NOT_FOUND ); //if not send HTTP 404 back to client
+		if(m == null) {
+			throw new WebApplicationException( Status.NOT_FOUND );
 		}
 
 		synchronized (this) {
@@ -212,12 +177,10 @@ public class MessageResource implements MessageService {
 			s.remove(mid);
 		}
 
-		throw new WebApplicationException(Status.NO_CONTENT);
 	}
 
 	@Override
 	public void deleteMessage(String user, long mid, String pwd) {
-
 		Message m = null;
 
 		User u = getUser(user,pwd);
@@ -228,20 +191,16 @@ public class MessageResource implements MessageService {
 		}
 
 
-		if(m == null) {  //check if message exists
-			System.out.println("Requested message does not exists." + mid);
-			throw new WebApplicationException( Status.NO_CONTENT ); //if not send HTTP 404 back to client
+		if(m == null) {
+			throw new WebApplicationException( Status.NO_CONTENT );
 		}
-
-
 
 		String[] pre = m.getSender().split(" ");
 		String name = pre[pre.length-1].split("@")[0].substring(1);
 
 
 		if(!(name.equals(u.getName()))){
-			System.out.println("namesd Do not match");
-			throw new WebApplicationException( Status.NO_CONTENT ); //if not send HTTP 404 back to client
+			throw new WebApplicationException( Status.NO_CONTENT );
 		}
 
 
@@ -252,8 +211,7 @@ public class MessageResource implements MessageService {
 			if (!doms.contains(domain)) doms.add(domain);
 		}
 
-		System.out.println("DOMS " + doms);
-
+		System.out.println("HOLA FROM DOMS " + doms);
 
 		for (String dom: doms) {
 			try {
@@ -277,13 +235,13 @@ public class MessageResource implements MessageService {
 
 		RequestHelper rh = new RequestHelper(url,client,target,mid);
 
-
-			queue.put(rh);
+		queue.put(rh);
 
 	}
 
 	@Override
 	public void deleteRegardless(long mid) {
+		System.out.println("DELETErEGARDLESS");
 		synchronized (this){
 			allMessages.remove(mid);
 			for(Map.Entry<String,Set<Long>> e : userInboxs.entrySet()){
@@ -297,6 +255,12 @@ public class MessageResource implements MessageService {
 	public void recieve_inboxes(String domain, Message msg) {
 		Long newID = msg.getId();
 
+		synchronized (this) {
+			if (!allMessages.containsKey(newID)){
+				allMessages.put(newID, msg);
+			}
+		}
+
 		List<String> usrs = new ArrayList<>();
 
 		for (String rec:msg.getDestination()){
@@ -309,39 +273,24 @@ public class MessageResource implements MessageService {
 			}
 		}
 
-		if (usrs.size() != 0) {
-
-			synchronized (this) {
-				if (!allMessages.containsKey(newID))
-					allMessages.put(newID, msg);
-			}
-
+		synchronized (this) {
 			for (String name : usrs) {
-				synchronized (this) {
-					//Add the message (identifier) to the inbox of each recipient
-
 					if (!userInboxs.containsKey(name)) {
 						userInboxs.put(name, new HashSet<Long>());
 					}
 					userInboxs.get(name).add(newID);
 
-
 				}
 			}
-		}
-		throw new WebApplicationException(Status.OK);
 	}
 
 	public User getUser(String name_unform, String pwd){
 		String url = "";
 		String name = name_unform.split("@")[0];
-		try {
-			String domain = InetAddress.getLocalHost().getCanonicalHostName();
-			URI[] uris = discovery_channel.knownUrisOf(domain);
-			url = uris[uris.length-1].toString();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}
+
+		URI[] uris = discovery_channel.knownUrisOf(my_domain);
+		url = uris[uris.length-1].toString();
+
 
 
 		Client client = ClientBuilder.newClient(config);
@@ -387,9 +336,11 @@ public class MessageResource implements MessageService {
 		List<String> domains = new ArrayList<>();
 
 		for(String recipient: msg.getDestination()) {
-			if (!domains.contains(recipient.split("@")[1]))
-				domains.add(recipient.split("@")[1]);
+			String r = recipient.split("@")[1];
+			if (!domains.contains(r))
+				domains.add(r);
 		}
+
 
 		for (String domain : domains){
 			URI[] uris = discovery_channel.knownUrisOf(domain);
@@ -397,8 +348,6 @@ public class MessageResource implements MessageService {
 
 			Client client = ClientBuilder.newClient(config);
 			WebTarget target = client.target(url).path(MessageService.PATH).path("add").path(domain);
-
-			System.out.println("Path: " + target);
 
 			RequestHelper rh = new RequestHelper(url, client,target,msg);
 
@@ -413,29 +362,16 @@ public class MessageResource implements MessageService {
 	private void spinThreads(){
 		BlockingQueue<RequestHelper> lq = new LinkedBlockingQueue<>();
 
-		new Thread(() -> {
+		/*new Thread(() -> {
 			for (;;) {
 				try {
 					RequestHelper rh = queue.take();
-					//try to send non stop
-					for(;;){
 						try {
-							Response r;
 							if (rh.getMethod().equals("POST")) {
-								System.out.println("Le Post");
-								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
-								if( r.getStatus() == Status.OK.getStatusCode()) {
-									break;
-								} else
-									throw new WebApplicationException(r.getStatus());
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
 							}
 							else {
-								System.out.println("Le Delete");
-								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
-								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
-									break;
-								} else
-									throw new WebApplicationException(r.getStatus());
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
 							}
 						} catch ( ProcessingException pe ) {
 							System.out.println("Timeout occurred.");
@@ -448,7 +384,7 @@ public class MessageResource implements MessageService {
 							}
 							System.out.println("Retrying to execute request.");
 						}
-					}
+
 
 				} catch (InterruptedException e) {
 					System.out.println("Thread Exception");
@@ -463,26 +399,79 @@ public class MessageResource implements MessageService {
 				try {
 					RequestHelper rh = lq.take();
 					//try to send non stop
-					for(;;){
-						try {
-							Response r;
+					try {
 							if (rh.getMethod().equals("POST")) {
-								System.out.println("Le Post");
-								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
-								if( r.getStatus() == Status.OK.getStatusCode()) {
-									break;
-								} else
-									throw new WebApplicationException(r.getStatus());
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
+							} else {
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
+							}
+					} catch (ProcessingException pe) {
+						System.out.println("Timeout occurred.");
+						lq.put(rh);
+						try {
+							Thread.sleep(GetMessageClient.RETRY_PERIOD);
+						} catch (InterruptedException e) {
+							System.out.println("interrupted");
+						}
+						System.out.println("Retrying to execute request.");
+					}
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+
+
+			}
+		}).start();*/
+
+
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelper rh = queue.take();
+					//try to send non stop
+
+						try {
+							if (rh.getMethod().equals("POST")) {
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
 							}
 							else {
-								System.out.println("Le Delete");
-								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
-								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
-									break;
-								} else
-									throw new WebApplicationException(r.getStatus());
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
 							}
-						} catch ( ProcessingException pe ) {
+						}catch ( ProcessingException pe ) {
+							System.out.println("Timeout occurred.");
+							try {
+								lq.put(rh);
+								Thread.sleep( GetMessageClient.RETRY_PERIOD );
+								break;
+							} catch (InterruptedException e) {
+								System.out.println("interrupted");
+							}
+							System.out.println("Retrying to execute request.");
+						}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+
+		}).start();
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelper rh = lq.take();
+					//try to send non stop
+					for (; ; ) {
+						try {
+							if (rh.getMethod().equals("POST")) {
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
+							}
+							else {
+								rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
+							}
+						}catch ( ProcessingException pe ) {
 							System.out.println("Timeout occurred.");
 							try {
 								Thread.sleep( GetMessageClient.RETRY_PERIOD );
@@ -491,6 +480,7 @@ public class MessageResource implements MessageService {
 							}
 							System.out.println("Retrying to execute request.");
 						}
+
 					}
 
 				} catch (InterruptedException e) {
@@ -498,6 +488,9 @@ public class MessageResource implements MessageService {
 					e.printStackTrace();
 				}
 			}
+
 		}).start();
+
+
 	}
 }

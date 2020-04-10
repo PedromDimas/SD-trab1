@@ -32,9 +32,10 @@ public class MessageServer {
 
 		discovery_channel = new Discovery(new InetSocketAddress("226.226.226.226",2266),InetAddress.getLocalHost().getCanonicalHostName(),"http://"+ip+":8080/rest");
 
+		String domain = InetAddress.getLocalHost().getCanonicalHostName();
 
-		MessageResource msgr = new MessageResource(discovery_channel);
-		UserResource usr = new UserResource();
+		MessageResource msgr = new MessageResource(domain,discovery_channel);
+		UserResource usr = new UserResource(domain);
 
 		ResourceConfig config = new ResourceConfig();
 		config.register(msgr);

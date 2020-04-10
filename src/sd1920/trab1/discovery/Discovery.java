@@ -95,8 +95,8 @@ public class Discovery {
 						String[] msgElems = msg.split(DELIMITER);
 
 						if( msgElems.length == 2) {	//periodic announcement
-							System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), 
-									pkt.getAddress().getHostAddress(), msg);
+							//System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), pkt.getAddress().getHostAddress(), msg);
+							//System.out.printf( "FROM %s (%s) : %s\n", pkt.getAddress().getCanonicalHostName(), pkt.getAddress().getHostAddress(), msg);
 
 							URI uri = URI.create(msgElems[1]);
 							if(uriByHost.containsKey(msgElems[0])){

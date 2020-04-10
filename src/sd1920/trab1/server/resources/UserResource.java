@@ -20,34 +20,30 @@ public class UserResource implements UserService {
 
     private static Logger Log = Logger.getLogger(MessageResource.class.getName());
 
-    public UserResource(){
+    private String my_domain;
+
+    public UserResource(String ip){
+        this.my_domain = ip;
     }
 
     @Override
     public String postUser(User user) {
+        if(user.getDomain() == null || user.getDomain().equals("") || user.getDomain().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
+        if(!user.getDomain().equals(my_domain)) throw new WebApplicationException(Status.FORBIDDEN);
 
-        try {
-            String domain = InetAddress.getLocalHost().getCanonicalHostName();
-            if (user.getDomain() == null || user.getDomain().equals("") || user.getDomain().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
-            if(!user.getDomain().equals(domain)) throw new WebApplicationException(Status.FORBIDDEN);
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        }
         if (user.getName()==null||user.getName().equals("")||user.getName().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
-        if(exists(user.getName(),false)) throw new WebApplicationException(Status.CONFLICT);
+        if(exists(user.getName())) throw new WebApplicationException(Status.CONFLICT);
 
         if (user.getPwd()==null || user.getPwd().equals("")||user.getPwd().equals(" ")) throw new WebApplicationException(Status.CONFLICT);
 
-        synchronized (this) {
-            userMap.put(user.getName(), user);
-        }
+        synchronized (this) { userMap.put(user.getName(), user); }
 
         return user.getName()+"@"+user.getDomain();
     }
 
     @Override
     public User getUser(String name, String pwd) {
-        if(!exists(name,false)){
+        if(!exists(name)){
             throw new WebApplicationException(Status.FORBIDDEN);
         }
 
@@ -82,14 +78,9 @@ public class UserResource implements UserService {
         return u;
     }
 
-    private boolean exists (String name, boolean flag){
-        boolean exists;
+    private boolean exists (String name){
         synchronized (this){
-            exists = userMap.containsKey(name);
+            return userMap.containsKey(name);
         }
-        if (flag){
-            if (exists) throw new WebApplicationException(Status.FORBIDDEN);
-        }
-        return exists;
     }
 }

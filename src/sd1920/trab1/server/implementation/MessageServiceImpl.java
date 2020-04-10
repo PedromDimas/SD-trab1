@@ -50,11 +50,14 @@ public class MessageServiceImpl implements MessageServiceSoap {
 	private static final String MESSAGES_WSDL = "/messages/?wsdl";
 	private static final String USER_WSDL = "/users/?wsdl";
 
-	public MessageServiceImpl(Discovery discovery_channel) {
+	String my_domain;
+
+	public MessageServiceImpl(String ip, Discovery discovery_channel) {
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
 		this.allMessages = new HashMap<Long, Message>();
 		this.userInboxs = new HashMap<String, Set<Long>>();
 		this.discovery_channel = discovery_channel;
+		this.my_domain = ip;
 		this.spinThreads();
 	}
 
@@ -212,8 +215,10 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		try {
 			u = getUser(user,pwd);
 		} catch (IOException e) {
-			e.printStackTrace();
+			throw new MessagesException("User Nopt Found");//if not send HTTP 404 back to client
 		}
+
+		System.out.printf("USER + " + u.getName());
 
 		synchronized (this) {
 			Set<Long> s = userInboxs.get(u.getName());
@@ -228,6 +233,7 @@ public class MessageServiceImpl implements MessageServiceSoap {
 			throw new MessagesException("Message Not Found");//if not send HTTP 404 back to client
 		}
 
+		System.out.println("MESSAGE " + m.getId());
 
 		return m; //Return message to the client with code HTTP 200
 	}
@@ -268,18 +274,6 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		System.out.println(messages + " MESSAGES");
 
 		return messages;
-	}
-
-	private void printmessages() {
-		for (Map.Entry<Long,Message> e : allMessages.entrySet()){
-			System.out.println("MID : " + e.getKey());
-		}
-
-		for (Map.Entry<String, Set<Long>> e : userInboxs.entrySet()){
-			for (Long l : e.getValue()){
-				System.out.println("mid : " + l);
-			}
-		}
 	}
 
 	@Override
@@ -444,7 +438,10 @@ public class MessageServiceImpl implements MessageServiceSoap {
 					//try to send non stop
 					for (; ; ) {
 						try {
-							System.out.println("try 1st queue");
+
+							URL url = new URL(rh.getUrl() + MESSAGES_WSDL);
+
+							URLConnection con= url.openConnection(); con.setConnectTimeout(CONNECTION_TIMEOUT); con.connect();
 
 							MessageServiceSoap messages = null;
 
@@ -467,8 +464,8 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								System.out.println("Success, message posted with id: " + rh.getMid());
 								break;
 							}
-						}catch ( WebServiceException wse) { //timeout
-							System.out.println("Communication error");
+						}catch ( WebServiceException | IOException con) { //timeout
+							System.out.println("Communication error short");
 							try {
 								lq.put(rh);
 								Thread.sleep( RETRY_PERIOD );//wait until attempting again.
@@ -477,8 +474,6 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}
 							System.out.println("Retrying to execute request.");
-						} catch (MalformedURLException e) {
-							System.out.printf("Malformation");
 						}
 
 					}
@@ -498,6 +493,10 @@ public class MessageServiceImpl implements MessageServiceSoap {
 					//try to send non stop
 					for (; ; ) {
 						try {
+
+							URL url = new URL(rh.getUrl() + MESSAGES_WSDL);
+							URLConnection con= url.openConnection(); con.setConnectTimeout(CONNECTION_TIMEOUT); con.connect();
+
 							MessageServiceSoap messages = null;
 
 							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
@@ -517,16 +516,14 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								System.out.println("Success, message posted with id: " + rh.getMid());
 								break;
 							}
-						}catch ( WebServiceException wse) { //timeout
-							System.out.println("Communication error");
+						}catch ( WebServiceException | IOException wse) { //timeout
+							System.out.println("Communication error long");
 							try {
 								Thread.sleep( RETRY_PERIOD ); //wait until attempting again.
 							} catch (InterruptedException e) {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}
 							System.out.println("Retrying to execute request.");
-						} catch (MalformedURLException e) {
-							e.printStackTrace();
 						}
 
 					}

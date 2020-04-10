@@ -18,20 +18,18 @@ import java.util.Map;
 public class UserServiceImpl implements UserServiceSoap {
 
     private final Map<String, User> userMap = new HashMap<>();
-    private String domain;
+    private String my_domain;
 
     public UserServiceImpl(String domain){
-        this.domain = domain;
+        this.my_domain = domain;
     }
 
     @Override
     public String postUser(User user) throws MessagesException {
-        if (user.getDomain() == null || user.getDomain().equals("") || user.getDomain().equals(" ") || !user.getDomain().equals(domain)){
-            throw new MessagesException("Invalid domain");
-        }
+        if (user.getDomain() == null || user.getDomain().equals("") || user.getDomain().equals(" ") || !user.getDomain().equals(my_domain))throw new MessagesException("Invalid domain");
         if (user.getName()==null||user.getName().equals("")||user.getName().equals(" ")) throw new MessagesException("Invalid User Name");
-        if(exists(user.getName(),false)) throw new MessagesException("User Exists");
 
+        if(exists(user.getName())) throw new MessagesException("User Exists");
         if (user.getPwd()==null || user.getPwd().equals("")||user.getPwd().equals(" ")) throw new MessagesException("Invalid Password");
 
         synchronized (this) {
@@ -43,7 +41,7 @@ public class UserServiceImpl implements UserServiceSoap {
 
     @Override
     public User getUser(String name, String pwd) throws MessagesException {
-        if(!exists(name,false)){
+        if(!exists(name)){
             throw new MessagesException("User does not exist");
         }
 
@@ -78,14 +76,9 @@ public class UserServiceImpl implements UserServiceSoap {
         return u;
     }
 
-    private boolean exists (String name, boolean flag){
-        boolean exists;
+    private boolean exists (String name){
         synchronized (this){
-            exists = userMap.containsKey(name);
+            return userMap.containsKey(name);
         }
-        if (flag){
-            if (exists) throw new WebApplicationException(Response.Status.FORBIDDEN);
-        }
-        return exists;
     }
 }

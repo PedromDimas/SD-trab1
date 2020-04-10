@@ -38,9 +38,11 @@ public class SOAPServer {
 		
 		// Provide an executor to create threads as needed...
 		server.setExecutor(Executors.newCachedThreadPool());
-		
+
+		String domain = InetAddress.getLocalHost().getCanonicalHostName();
+
 		// Create a SOAP Endpoint (you need one for each service)
-		Endpoint soapMessagesEndpoint = Endpoint.create(new MessageServiceImpl(discovery_channel));
+		Endpoint soapMessagesEndpoint = Endpoint.create(new MessageServiceImpl(InetAddress.getLocalHost().getCanonicalHostName(),discovery_channel));
 		Endpoint soapUsersEndpoint = Endpoint.create(new UserServiceImpl(InetAddress.getLocalHost().getCanonicalHostName()));
 
 		// Publish a SOAP webservice, under the "http://<ip>:<port>/soap"
