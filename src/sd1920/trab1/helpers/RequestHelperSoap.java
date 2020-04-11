@@ -3,7 +3,7 @@ package sd1920.trab1.helpers;
 import sd1920.trab1.api.Message;
 
 
-public class RequestHelperSoap {
+public class RequestHelperSoap implements RequestHelper{
 
     private String url;
     private Message msg;

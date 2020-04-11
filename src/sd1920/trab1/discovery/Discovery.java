@@ -6,10 +6,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.logging.Logger;
 
 /**
@@ -99,19 +96,20 @@ public class Discovery {
 									pkt.getAddress().getHostAddress(), msg);
 
 							URI uri = URI.create(msgElems[1]);
-							if(uriByHost.containsKey(msgElems[0])){
-								if(!uriByHost.get(msgElems[0]).contains(uri))
-									uriByHost.get(msgElems[0]).add(uri);
+							synchronized (this) {
+								if (uriByHost.containsKey(msgElems[0])) {
+									if (!uriByHost.get(msgElems[0]).contains(uri))
+										uriByHost.get(msgElems[0]).add(uri);
+								} else {
+									List<URI> list = new ArrayList<>();
+									list.add(uri);
+									uriByHost.put(msgElems[0], list);
+								}
+								if (accessTimeByHost.containsKey(msgElems[0])) {
+									accessTimeByHost.remove(msgElems[0]);
+								}
+								accessTimeByHost.put(msgElems[0], System.currentTimeMillis());
 							}
-							else {
-								List<URI> list = new ArrayList<>();
-								list.add(uri);
-								uriByHost.put(msgElems[0], list);
-							}
-							if(accessTimeByHost.containsKey(msgElems[0])){
-								accessTimeByHost.remove(msgElems[0]);
-							}
-							accessTimeByHost.put(msgElems[0], System.currentTimeMillis());
 
 						}
 					} catch (IOException e) {
@@ -141,7 +139,21 @@ public class Discovery {
 
 		return uris;
 	}
-	
+
+	public List<String> getOnline(){
+		List<String> l;
+		synchronized (this) {
+			l = new LinkedList<>();
+			for (String s : accessTimeByHost.keySet()) {
+				if (accessTimeByHost.get(s) + DISCOVERY_TIMEOUT > System.currentTimeMillis()) {
+					l.add(s);
+				}
+			}
+
+		}
+		return l;
+	}
+
 	// Main just for testing purposes
 	public static void main( String[] args) throws Exception {
 		Discovery discovery = new Discovery( DISCOVERY_ADDR, "test", "http://" + InetAddress.getLocalHost().getHostAddress());

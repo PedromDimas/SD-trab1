@@ -30,6 +30,7 @@ import sd1920.trab1.clients.GetMessageClient;
 import sd1920.trab1.clients.utils.MessageUtills;
 import sd1920.trab1.discovery.Discovery;
 import sd1920.trab1.helpers.RequestHelper;
+import sd1920.trab1.helpers.RequestHelperRest;
 
 @Singleton
 public class MessageResource implements MessageService {
@@ -275,7 +276,7 @@ public class MessageResource implements MessageService {
 		Client client = ClientBuilder.newClient(config);
 		WebTarget target = client.target(url).path(MessageResource.PATH).path("delete").path(String.valueOf(mid));
 
-		RequestHelper rh = new RequestHelper(url,client,target,mid);
+		RequestHelper rh = new RequestHelperRest(url,client,target,mid,dom);
 
 
 			queue.put(rh);
@@ -400,7 +401,7 @@ public class MessageResource implements MessageService {
 
 			System.out.println("Path: " + target);
 
-			RequestHelper rh = new RequestHelper(url, client,target,msg);
+			RequestHelper rh = new RequestHelperRest(url, client,target,msg,domain);
 
 
 			queue.put(rh);
@@ -411,12 +412,12 @@ public class MessageResource implements MessageService {
 	}
 
 	private void spinThreads(){
-		BlockingQueue<RequestHelper> lq = new LinkedBlockingQueue<>();
+		BlockingQueue<RequestHelperRest> lq = new LinkedBlockingQueue<>();
 
 		new Thread(() -> {
 			for (;;) {
 				try {
-					RequestHelper rh = queue.take();
+					RequestHelperRest rh = (RequestHelperRest) queue.take();
 					//try to send non stop
 					for(;;){
 						try {
@@ -461,7 +462,7 @@ public class MessageResource implements MessageService {
 		new Thread(() -> {
 			for (;;) {
 				try {
-					RequestHelper rh = lq.take();
+					RequestHelperRest rh = lq.take();
 					//try to send non stop
 					for(;;){
 						try {
