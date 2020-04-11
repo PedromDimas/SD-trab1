@@ -311,12 +311,20 @@ public class MessageResource implements MessageService {
 
 		if (usrs.size() != 0) {
 
-			synchronized (this) {
-				if (!allMessages.containsKey(newID))
-					allMessages.put(newID, msg);
-			}
+
+
 
 			for (String name : usrs) {
+
+				if(!check_user_exists(name)){
+					Message m = create_error_message(msg,name);
+					try {
+						requestPost(msg);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+
 				synchronized (this) {
 					//Add the message (identifier) to the inbox of each recipient
 
@@ -328,8 +336,74 @@ public class MessageResource implements MessageService {
 
 				}
 			}
+
+			synchronized (this) {
+				if (!allMessages.containsKey(newID))
+					allMessages.put(newID, msg);
+			}
+
 		}
 		throw new WebApplicationException(Status.OK);
+	}
+
+	private Message create_error_message(Message msg, String name) {
+		Message m = new Message();
+		m.setContents(msg.getContents());
+		m.setCreationTime(msg.getCreationTime());
+		String[] pre = m.getSender().split(" ");
+		Set<String> s = new HashSet<>();
+		s.add(pre[pre.length-1]);
+		m.setDestination(s);
+		m.setSender(msg.getSender());
+		m.setId(msg.getId());
+		m.setSubject(String.format("FALHA NO ENVIO DE %l PARA %s",msg.getId(),name));
+		return m;
+	}
+
+	private boolean check_user_exists(String name) {
+		String url = "";
+		try {
+			String domain = InetAddress.getLocalHost().getCanonicalHostName();
+			URI[] uris = discovery_channel.knownUrisOf(domain);
+			url = uris[uris.length-1].toString();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+
+
+		Client client = ClientBuilder.newClient(config);
+		WebTarget target = client.target(url).path(UserService.PATH).path("ex").path(name);
+
+
+
+		short retries = 0;
+
+		while(retries < GetMessageClient.MAX_RETRIES) {
+			try {
+
+				Response r = target.request().accept(MediaType.APPLICATION_JSON).get();
+				System.out.println("RESPONSE + " + r);
+				if( r.getStatus() == Status.OK.getStatusCode() && r.hasEntity() ) {
+					System.out.println("Success:");
+					boolean e = r.readEntity(boolean.class);
+					return e;
+				} else
+					throw new WebApplicationException(r.getStatus());
+
+			} catch ( ProcessingException pe ) { //Error in communication with server
+				System.out.println("Timeout occurred.");
+				//pe.printStackTrace(); //Could be removed
+				retries ++;
+				try {
+					Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
+				} catch (InterruptedException e) {
+					System.out.println("interrupted");
+					//Nothing to be done here, if this happens we will just retry sooner.
+				}
+				System.out.println("Retrying to execute request.");
+			}
+		}
+		throw new WebApplicationException(Status.FORBIDDEN);
 	}
 
 	public User getUser(String name_unform, String pwd){
@@ -484,6 +558,7 @@ public class MessageResource implements MessageService {
 							}
 						} catch ( ProcessingException pe ) {
 							System.out.println("Timeout occurred.");
+							lq.put(rh);
 							try {
 								Thread.sleep( GetMessageClient.RETRY_PERIOD );
 							} catch (InterruptedException e) {

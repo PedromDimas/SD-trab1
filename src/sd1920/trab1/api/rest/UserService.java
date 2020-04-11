@@ -76,4 +76,9 @@ public interface UserService {
 	@Produces(MediaType.APPLICATION_JSON)
 	User deleteUser(@PathParam("name") String name, @QueryParam("pwd") String pwd);
 
+	@GET
+	@Path("/ex/{name}")
+	@Produces(MediaType.APPLICATION_JSON)
+	boolean exists(@PathParam("name") String name);
+
 }
