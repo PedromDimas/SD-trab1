@@ -99,6 +99,35 @@ public class MessageResource implements MessageService {
 				allMessages.put(newID, msg);
 		}
 
+		//Check if user exists
+		for (String us : msg.getDestination()){
+			String[] spl = us.split("@");
+			String name = spl[0];
+			String domain = spl[1];
+
+			if(!check_user_exists(name,domain)){
+				Message m = create_error_message(msg,us);
+				String[] pre = m.getSender().split(" ");
+				String S_name = pre[pre.length-1].split("@")[0].substring(1);
+
+				synchronized (this) {
+					if (!allMessages.containsKey(m.getId()))
+						allMessages.put(m.getId(), m);
+				}
+				synchronized (this) {
+					//Add the message (identifier) to the inbox of each recipient
+
+					if (!userInboxs.containsKey(S_name)) {
+						userInboxs.put(S_name, new HashSet<Long>());
+					}
+					userInboxs.get(S_name).add(m.getId());
+
+
+				}
+			}
+
+		}
+
 
 		Log.info("Created new message with id: " + newID);
 		MessageUtills.printMessage(allMessages.get(newID));
@@ -112,6 +141,71 @@ public class MessageResource implements MessageService {
 		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
 		Log.info("Recorded message with identifier: " + newID);
 		return newID;
+	}
+
+	private Message create_error_message(Message msg, String name) {
+		Message m = new Message();
+		m.setContents(msg.getContents());
+		m.setCreationTime(msg.getCreationTime());
+		m.setDestination(msg.getDestination());
+		m.setSender(msg.getSender());
+		long newID = 0;
+		synchronized (this) {
+
+			//Generate a new id for the message, that is not in use yet
+			newID = Math.abs(randomNumberGenerator.nextLong());
+			while(allMessages.containsKey(newID)) {
+				newID = Math.abs(randomNumberGenerator.nextLong());
+			}
+
+		}
+		m.setId(newID);
+		String subject = String.format("FALHA NO ENVIO DE %s PARA %s",msg.getId(),name);
+		m.setSubject(subject);
+		return m;
+	}
+
+	private boolean check_user_exists(String name,String domain) {
+		String url = "";
+
+		URI[] uris = discovery_channel.knownUrisOf(domain);
+		url = uris[uris.length-1].toString();
+
+
+
+		Client client = ClientBuilder.newClient(config);
+		WebTarget target = client.target(url).path(UserService.PATH).path("ex").path(name);
+
+
+
+		short retries = 0;
+
+		while(retries < GetMessageClient.MAX_RETRIES) {
+			try {
+
+				Response r = target.request().accept(MediaType.APPLICATION_JSON).get();
+				System.out.println("RESPONSE + " + r);
+				if( r.getStatus() == Status.OK.getStatusCode() && r.hasEntity() ) {
+					System.out.println("Success:");
+					boolean e = r.readEntity(Boolean.class);
+					return e;
+				} else
+					throw new WebApplicationException(r.getStatus());
+
+			} catch ( ProcessingException pe ) { //Error in communication with server
+				System.out.println("Timeout occurred.");
+				//pe.printStackTrace(); //Could be removed
+				retries ++;
+				try {
+					Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
+				} catch (InterruptedException e) {
+					System.out.println("interrupted");
+					//Nothing to be done here, if this happens we will just retry sooner.
+				}
+				System.out.println("Retrying to execute request.");
+			}
+		}
+		throw new WebApplicationException(Status.FORBIDDEN);
 	}
 
 	@Override
@@ -316,15 +410,6 @@ public class MessageResource implements MessageService {
 
 			for (String name : usrs) {
 
-				if(!check_user_exists(name)){
-					Message m = create_error_message(msg,name);
-					try {
-						requestPost(msg);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-				}
-
 				synchronized (this) {
 					//Add the message (identifier) to the inbox of each recipient
 
@@ -344,66 +429,6 @@ public class MessageResource implements MessageService {
 
 		}
 		throw new WebApplicationException(Status.OK);
-	}
-
-	private Message create_error_message(Message msg, String name) {
-		Message m = new Message();
-		m.setContents(msg.getContents());
-		m.setCreationTime(msg.getCreationTime());
-		String[] pre = m.getSender().split(" ");
-		Set<String> s = new HashSet<>();
-		s.add(pre[pre.length-1]);
-		m.setDestination(s);
-		m.setSender(msg.getSender());
-		m.setId(msg.getId());
-		m.setSubject(String.format("FALHA NO ENVIO DE %l PARA %s",msg.getId(),name));
-		return m;
-	}
-
-	private boolean check_user_exists(String name) {
-		String url = "";
-		try {
-			String domain = InetAddress.getLocalHost().getCanonicalHostName();
-			URI[] uris = discovery_channel.knownUrisOf(domain);
-			url = uris[uris.length-1].toString();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}
-
-
-		Client client = ClientBuilder.newClient(config);
-		WebTarget target = client.target(url).path(UserService.PATH).path("ex").path(name);
-
-
-
-		short retries = 0;
-
-		while(retries < GetMessageClient.MAX_RETRIES) {
-			try {
-
-				Response r = target.request().accept(MediaType.APPLICATION_JSON).get();
-				System.out.println("RESPONSE + " + r);
-				if( r.getStatus() == Status.OK.getStatusCode() && r.hasEntity() ) {
-					System.out.println("Success:");
-					boolean e = r.readEntity(boolean.class);
-					return e;
-				} else
-					throw new WebApplicationException(r.getStatus());
-
-			} catch ( ProcessingException pe ) { //Error in communication with server
-				System.out.println("Timeout occurred.");
-				//pe.printStackTrace(); //Could be removed
-				retries ++;
-				try {
-					Thread.sleep( GetMessageClient.RETRY_PERIOD ); //wait until attempting again.
-				} catch (InterruptedException e) {
-					System.out.println("interrupted");
-					//Nothing to be done here, if this happens we will just retry sooner.
-				}
-				System.out.println("Retrying to execute request.");
-			}
-		}
-		throw new WebApplicationException(Status.FORBIDDEN);
 	}
 
 	public User getUser(String name_unform, String pwd){
