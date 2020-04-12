@@ -11,6 +11,13 @@ import java.util.logging.Logger;
 import javax.inject.Singleton;
 import javax.jws.WebService;
 
+import javax.ws.rs.ProcessingException;
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import javax.xml.namespace.QName;
 import javax.xml.ws.BindingProvider;
 import javax.xml.ws.WebServiceException;
@@ -19,9 +26,11 @@ import javax.xml.ws.Service;
 import com.sun.xml.ws.client.BindingProviderProperties;
 import sd1920.trab1.api.Message;
 import sd1920.trab1.api.User;
+import sd1920.trab1.api.rest.UserService;
 import sd1920.trab1.api.soap.MessagesException;
 import sd1920.trab1.api.soap.MessageServiceSoap;
 import sd1920.trab1.api.soap.UserServiceSoap;
+import sd1920.trab1.clients.GetMessageClient;
 import sd1920.trab1.clients.utils.MessageUtills;
 import sd1920.trab1.discovery.Discovery;
 import sd1920.trab1.helpers.RequestHelperSoap;
@@ -70,8 +79,6 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		}
 
 
-		System.out.println("USER: " + u.getName());
-
 		//Check if message is valid, if not return HTTP CONFLICT (409)
 		if(msg.getSender() == null || msg.getDestination() == null || msg.getDestination().size() == 0) {
 			System.out.println("Message no Exist");
@@ -106,6 +113,37 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		}
 
 
+		//Check if user exists
+		for (String us : msg.getDestination()){
+			String[] spl = us.split("@");
+			String name = spl[0];
+			String domain = spl[1];
+
+			if(!check_user_exists(name,domain)){
+				Message m = create_error_message(msg,us);
+				String[] pre = m.getSender().split(" ");
+				String S_name = pre[pre.length-1].split("@")[0].substring(1);
+
+				synchronized (this) {
+					if (!allMessages.containsKey(m.getId()))
+						allMessages.put(m.getId(), m);
+				}
+				synchronized (this) {
+					//Add the message (identifier) to the inbox of each recipient
+
+					if (!userInboxs.containsKey(S_name)) {
+						userInboxs.put(S_name, new HashSet<Long>());
+					}
+					userInboxs.get(S_name).add(m.getId());
+
+
+				}
+			}
+
+		}
+
+
+
 		Log.info("Created new message with id: " + newID);
 		MessageUtills.printMessage(allMessages.get(newID));
 
@@ -120,6 +158,69 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
 		Log.info("Recorded message with identifier: " + newID);
 		return newID;
+	}
+
+	private Message create_error_message(Message msg, String name) {
+		Message m = new Message();
+		m.setContents(msg.getContents());
+		m.setCreationTime(msg.getCreationTime());
+		m.setDestination(msg.getDestination());
+		m.setSender(msg.getSender());
+		long newID = 0;
+		synchronized (this) {
+
+			//Generate a new id for the message, that is not in use yet
+			newID = Math.abs(randomNumberGenerator.nextLong());
+			while(allMessages.containsKey(newID)) {
+				newID = Math.abs(randomNumberGenerator.nextLong());
+			}
+
+		}
+		m.setId(newID);
+		String subject = String.format("FALHA NO ENVIO DE %s PARA %s",msg.getId(),name);
+		m.setSubject(subject);
+		return m;
+	}
+
+	private boolean check_user_exists(String name,String domain) throws MessagesException {
+		String url = "";
+
+
+		URI[] uris = discovery_channel.knownUrisOf(domain);
+		url = uris[uris.length-1].toString();
+
+
+		//Form Connection with server
+		UserServiceSoap us = null;
+		try {
+			QName QNAME = new QName(UserServiceSoap.NAMESPACE, UserServiceSoap.NAME);
+			Service service = Service.create( new URL(url + USER_WSDL), QNAME);
+			us = service.getPort( sd1920.trab1.api.soap.UserServiceSoap.class );
+		} catch (WebServiceException | MalformedURLException wse) {
+			System.err.println("Could not conntact the server: " + wse.getMessage());
+			throw new MessagesException( "Connection Eroor" );
+		}
+
+		//Set timeouts
+		((BindingProvider) us).getRequestContext().put(BindingProviderProperties.CONNECT_TIMEOUT, CONNECTION_TIMEOUT);
+		((BindingProvider) us).getRequestContext().put(BindingProviderProperties.REQUEST_TIMEOUT, REPLY_TIMEOUT);
+
+		//Execute connection
+
+		while(true) {
+			try {
+				return us.exists(name);
+			} catch ( WebServiceException wse) { //timeout
+				System.out.println("Communication error");
+				wse.printStackTrace(); //could be removed.
+				try {
+					Thread.sleep( RETRY_PERIOD ); //wait until attempting again.
+				} catch (InterruptedException e) {
+					//Nothing to be done here, if this happens we will just retry sooner.
+				}
+				System.out.println("Retrying to execute request.");
+			}
+		}
 	}
 
 	private void requestPost(Message msg) throws InterruptedException {

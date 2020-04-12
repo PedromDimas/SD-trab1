@@ -58,4 +58,7 @@ public interface UserServiceSoap {
 	@WebMethod
 	public User deleteUser(String name, String pwd) throws MessagesException;
 
+	@WebMethod
+	public boolean exists (String name);
+
 }

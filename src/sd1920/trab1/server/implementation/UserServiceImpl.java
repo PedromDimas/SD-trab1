@@ -6,8 +6,6 @@ import sd1920.trab1.api.soap.UserServiceSoap;
 
 import javax.inject.Singleton;
 import javax.jws.WebService;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -30,7 +28,7 @@ public class UserServiceImpl implements UserServiceSoap {
             throw new MessagesException("Invalid domain");
         }
         if (user.getName()==null||user.getName().equals("")||user.getName().equals(" ")) throw new MessagesException("Invalid User Name");
-        if(exists(user.getName(),false)) throw new MessagesException("User Exists");
+        if(exists(user.getName())) throw new MessagesException("User Exists");
 
         if (user.getPwd()==null || user.getPwd().equals("")||user.getPwd().equals(" ")) throw new MessagesException("Invalid Password");
 
@@ -43,7 +41,7 @@ public class UserServiceImpl implements UserServiceSoap {
 
     @Override
     public User getUser(String name, String pwd) throws MessagesException {
-        if(!exists(name,false)){
+        if(!exists(name)){
             throw new MessagesException("User does not exist");
         }
 
@@ -78,14 +76,13 @@ public class UserServiceImpl implements UserServiceSoap {
         return u;
     }
 
-    private boolean exists (String name, boolean flag){
+    @Override
+    public boolean exists (String name){
         boolean exists;
         synchronized (this){
             exists = userMap.containsKey(name);
         }
-        if (flag){
-            if (exists) throw new WebApplicationException(Response.Status.FORBIDDEN);
-        }
+
         return exists;
     }
 }
