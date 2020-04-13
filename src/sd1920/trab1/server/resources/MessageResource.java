@@ -1,8 +1,6 @@
 package sd1920.trab1.server.resources;
 
-import java.net.InetAddress;
-import java.net.URI;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -19,24 +17,33 @@ import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
+import javax.xml.namespace.QName;
+import javax.xml.ws.BindingProvider;
+import javax.xml.ws.Service;
+import javax.xml.ws.WebServiceException;
 
+import com.sun.xml.ws.client.BindingProviderProperties;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientProperties;
 import sd1920.trab1.api.Message;
 import sd1920.trab1.api.User;
 import sd1920.trab1.api.rest.MessageService;
 import sd1920.trab1.api.rest.UserService;
+import sd1920.trab1.api.soap.MessageServiceSoap;
+import sd1920.trab1.api.soap.MessagesException;
 import sd1920.trab1.clients.GetMessageClient;
 import sd1920.trab1.clients.utils.MessageUtills;
 import sd1920.trab1.discovery.Discovery;
 import sd1920.trab1.helpers.RequestHelper;
+import sd1920.trab1.helpers.RequestHelperSoap;
 
 @Singleton
 public class MessageResource implements MessageService {
 
 	private Random randomNumberGenerator;
 
-	private final BlockingQueue<RequestHelper> queue = new SynchronousQueue<>();
+	private final BlockingQueue<RequestHelper> queueRest = new SynchronousQueue<>();
+	private final BlockingQueue<RequestHelperSoap> queueSoap = new SynchronousQueue<>();
 	private ClientConfig config;
 	private final Map<Long,Message> allMessages = new HashMap<>();
 	private final Map<String,Set<Long>> userInboxs = new HashMap<>();
@@ -45,10 +52,21 @@ public class MessageResource implements MessageService {
 
 	private Discovery discovery_channel;
 
+
+	public final static int MAX_RETRIES = 3;
+	public final static long RETRY_PERIOD = 1000;
+	public final static int CONNECTION_TIMEOUT = 1000;
+	public final static int REPLY_TIMEOUT = 600;
+
+	private static final String MESSAGES_WSDL = "/messages/?wsdl";
+	private static final String USER_WSDL = "/users/?wsdl";
+
+
 	public MessageResource(Discovery discovery_channel) {
 		this.discovery_channel = discovery_channel;
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
-		this.spinThreads();
+		this.spinThreadsRest();
+		this.spinThreadsSoap();
 		config = new ClientConfig();
 		//How much time until timeout on opening the TCP connection to the server
 		config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
@@ -350,10 +368,20 @@ public class MessageResource implements MessageService {
 		Client client = ClientBuilder.newClient(config);
 		WebTarget target = client.target(url).path(MessageResource.PATH).path("delete").path(String.valueOf(mid));
 
-		RequestHelper rh = new RequestHelper(url,client,target,mid);
 
 
-			queue.put(rh);
+		String serviceType = url.split("/")[3];
+
+		System.out.println( "CONACA Rest" + serviceType);
+
+		if (serviceType.equals("rest")) {
+			RequestHelper rh = new RequestHelper(url, client, target, mid);
+			queueRest.put(rh);
+		}
+		else {
+			RequestHelperSoap rh = new RequestHelperSoap(mid,dom,url);
+			queueSoap.put(rh);
+		}
 
 	}
 
@@ -487,32 +515,40 @@ public class MessageResource implements MessageService {
 
 			System.out.println("Path: " + target);
 
-			RequestHelper rh = new RequestHelper(url, client,target,msg);
+			String serviceType = url.split("/")[3];
+			if (serviceType.equals("rest")) {
+				RequestHelper rh = new RequestHelper(url,client,target,msg);
+				queueRest.put(rh);
+			}
+			else {
+				RequestHelperSoap rh = new RequestHelperSoap(url,msg,domain);
+				queueSoap.put(rh);
+			}
 
-
-			queue.put(rh);
 
 
 		}
 
 	}
 
-	private void spinThreads(){
+	private void spinThreadsRest(){
 		BlockingQueue<RequestHelper> lq = new LinkedBlockingQueue<>();
 
 		new Thread(() -> {
 			for (;;) {
 				try {
-					RequestHelper rh = queue.take();
+					RequestHelper rh = queueRest.take();
 					//try to send non stop
 					for(;;){
 						try {
 							Response r;
 							if (rh.getMethod().equals("POST")) {
-								System.out.println("Le Post");
+								System.out.println("Le Post Rest");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
 								if( r.getStatus() == Status.OK.getStatusCode()) {
 									List<String> missmatches = r.readEntity(ArrayList.class);
+
+									if (missmatches == null) break;
 
 									System.out.println("MISSMATCHES " + missmatches);
 
@@ -540,7 +576,7 @@ public class MessageResource implements MessageService {
 									throw new WebApplicationException(r.getStatus());
 							}
 							else {
-								System.out.println("Le Delete");
+								System.out.println("Le Delete Rest");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
 								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
 									List<String> missmatches = r.readEntity(ArrayList.class);
@@ -600,7 +636,7 @@ public class MessageResource implements MessageService {
 						try {
 							Response r;
 							if (rh.getMethod().equals("POST")) {
-								System.out.println("Le Post");
+								System.out.println("Le Post Soap");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
 								if( r.getStatus() == Status.OK.getStatusCode()) {
 									break;
@@ -608,7 +644,7 @@ public class MessageResource implements MessageService {
 									throw new WebApplicationException(r.getStatus());
 							}
 							else {
-								System.out.println("Le Delete");
+								System.out.println("Le Delete Soap");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
 								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
 									break;
@@ -633,6 +669,152 @@ public class MessageResource implements MessageService {
 					e.printStackTrace();
 				}
 			}
+		}).start();
+	}
+
+	private void spinThreadsSoap(){
+		BlockingQueue<RequestHelperSoap> lq = new LinkedBlockingQueue<>();
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelperSoap rh = queueSoap.take();
+					//try to send non stop
+					for (; ; ) {
+						try {
+							System.out.println("try 1st queue");
+
+							MessageServiceSoap messages = null;
+
+							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
+							Service service = Service.create( new URL(rh.getUrl() + MESSAGES_WSDL), QNAME);
+							messages = service.getPort( MessageServiceSoap.class );
+
+
+
+							//Set timeouts
+							((BindingProvider) messages).getRequestContext().put(BindingProviderProperties.CONNECT_TIMEOUT, CONNECTION_TIMEOUT);
+							((BindingProvider) messages).getRequestContext().put(BindingProviderProperties.REQUEST_TIMEOUT, REPLY_TIMEOUT);
+
+							if (rh.getMethod().equals("POST")) {
+								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+								for (String u: missMatches) {
+									Message m = create_error_message(rh.getMsg(), u);
+									String[] pre = m.getSender().split(" ");
+									String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+									synchronized (this) {
+										if (!allMessages.containsKey(m.getId()))
+											allMessages.put(m.getId(), m);
+									}
+									synchronized (this) {
+										//Add the message (identifier) to the inbox of each recipient
+
+										if (!userInboxs.containsKey(S_name)) {
+											userInboxs.put(S_name, new HashSet<Long>());
+										}
+										userInboxs.get(S_name).add(m.getId());
+
+									}
+								}
+								break;
+							} else {
+								messages.deleteRegardless(rh.getMid());
+								System.out.println("Success, message posted with id: " + rh.getMid());
+								break;
+							}
+						}catch ( WebServiceException wse) { //timeout
+							System.out.println("Communication error");
+							try {
+								lq.put(rh);
+								Thread.sleep( RETRY_PERIOD );//wait until attempting again.
+								break;
+							} catch (InterruptedException e) {
+								//Nothing to be done here, if this happens we will just retry sooner.
+							}
+							System.out.println("Retrying to execute request.");
+						} catch (MalformedURLException e) {
+							System.out.printf("Malformation");
+						} catch (MessagesException e) {
+							e.printStackTrace();
+						}
+
+					}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+
+		}).start();
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelperSoap rh = lq.take();
+					//try to send non stop
+					for (; ; ) {
+						try {
+							MessageServiceSoap messages = null;
+
+							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
+							Service service = Service.create( new URL(rh.getUrl() + MESSAGES_WSDL), QNAME);
+							messages = service.getPort( MessageServiceSoap.class );
+
+							//Set timeouts
+							((BindingProvider) messages).getRequestContext().put(BindingProviderProperties.CONNECT_TIMEOUT, CONNECTION_TIMEOUT);
+							((BindingProvider) messages).getRequestContext().put(BindingProviderProperties.REQUEST_TIMEOUT, REPLY_TIMEOUT);
+
+							if (rh.getMethod().equals("POST")) {
+								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+								for (String u: missMatches) {
+									Message m = create_error_message(rh.getMsg(), u);
+									String[] pre = m.getSender().split(" ");
+									String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+									synchronized (this) {
+										if (!allMessages.containsKey(m.getId()))
+											allMessages.put(m.getId(), m);
+									}
+									synchronized (this) {
+										//Add the message (identifier) to the inbox of each recipient
+
+										if (!userInboxs.containsKey(S_name)) {
+											userInboxs.put(S_name, new HashSet<Long>());
+										}
+										userInboxs.get(S_name).add(m.getId());
+
+									}
+								}
+								break;
+							} else {
+								messages.deleteRegardless(rh.getMid());
+								System.out.println("Success, message posted with id: " + rh.getMid());
+								break;
+							}
+						}catch ( WebServiceException wse) { //timeout
+							System.out.println("Communication error");
+							try {
+								Thread.sleep( RETRY_PERIOD ); //wait until attempting again.
+							} catch (InterruptedException e) {
+								//Nothing to be done here, if this happens we will just retry sooner.
+							}
+							System.out.println("Retrying to execute request.");
+						} catch (MalformedURLException e) {
+							e.printStackTrace();
+						} catch (MessagesException e) {
+							e.printStackTrace();
+						}
+
+					}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+
 		}).start();
 	}
 }

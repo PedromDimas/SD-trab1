@@ -15,6 +15,7 @@ import javax.ws.rs.ProcessingException;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -24,8 +25,11 @@ import javax.xml.ws.WebServiceException;
 import javax.xml.ws.Service;
 
 import com.sun.xml.ws.client.BindingProviderProperties;
+import org.glassfish.jersey.client.ClientConfig;
+import org.glassfish.jersey.client.ClientProperties;
 import sd1920.trab1.api.Message;
 import sd1920.trab1.api.User;
+import sd1920.trab1.api.rest.MessageService;
 import sd1920.trab1.api.rest.UserService;
 import sd1920.trab1.api.soap.MessagesException;
 import sd1920.trab1.api.soap.MessageServiceSoap;
@@ -33,7 +37,9 @@ import sd1920.trab1.api.soap.UserServiceSoap;
 import sd1920.trab1.clients.GetMessageClient;
 import sd1920.trab1.clients.utils.MessageUtills;
 import sd1920.trab1.discovery.Discovery;
+import sd1920.trab1.helpers.RequestHelper;
 import sd1920.trab1.helpers.RequestHelperSoap;
+import sd1920.trab1.server.resources.MessageResource;
 
 
 @WebService(serviceName= MessageServiceSoap.NAME,
@@ -43,7 +49,8 @@ endpointInterface=MessageServiceSoap.INTERFACE)
 public class MessageServiceImpl implements MessageServiceSoap {
 
 	private Random randomNumberGenerator;
-	private final BlockingQueue<RequestHelperSoap> queue = new SynchronousQueue<>();
+	private final BlockingQueue<RequestHelper> queueRest = new SynchronousQueue<>();
+	private final BlockingQueue<RequestHelperSoap> queueSoap = new SynchronousQueue<>();
 	private final Map<Long,Message> allMessages; 
 	private final Map<String,Set<Long>> userInboxs;
 
@@ -59,12 +66,22 @@ public class MessageServiceImpl implements MessageServiceSoap {
 	private static final String MESSAGES_WSDL = "/messages/?wsdl";
 	private static final String USER_WSDL = "/users/?wsdl";
 
+	private ClientConfig config;
+
 	public MessageServiceImpl(Discovery discovery_channel) {
 		this.randomNumberGenerator = new Random(System.currentTimeMillis());
 		this.allMessages = new HashMap<Long, Message>();
 		this.userInboxs = new HashMap<String, Set<Long>>();
 		this.discovery_channel = discovery_channel;
-		this.spinThreads();
+		this.spinThreadsRest();
+		this.spinThreadsSoap();
+
+		config = new ClientConfig();
+		//How much time until timeout on opening the TCP connection to the server
+		config.property(ClientProperties.CONNECT_TIMEOUT, GetMessageClient.CONNECTION_TIMEOUT);
+		//How much time to wait for the reply of the server after sending the request
+		config.property(ClientProperties.READ_TIMEOUT, GetMessageClient.REPLY_TIMEOUT);
+
 	}
 
 
@@ -216,10 +233,17 @@ public class MessageServiceImpl implements MessageServiceSoap {
 			url = uris[uris.length-1].toString();
 
 
-			RequestHelperSoap rh = new RequestHelperSoap(url,msg, domain, url);
-
-
-			queue.put(rh);
+			String serviceType = url.split("/")[3];
+			if (serviceType.equals("rest")) {
+				Client client = ClientBuilder.newClient(config);
+				WebTarget target = client.target(url).path(MessageService.PATH).path("add").path(domain);
+				RequestHelper rh = new RequestHelper(url,client,target,msg);
+				queueRest.put(rh);
+			}
+			else {
+				RequestHelperSoap rh = new RequestHelperSoap(url,msg,domain);
+				queueSoap.put(rh);
+			}
 
 
 		}
@@ -456,10 +480,20 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		url = uris[uris.length-1].toString();
 
 
-		RequestHelperSoap rh = new RequestHelperSoap(mid,dom,url);
+		String serviceType = url.split("/")[3];
 
+		System.out.println( "CONACA" + serviceType);
 
-		queue.put(rh);
+		if (serviceType.equals("rest")) {
+			Client client = ClientBuilder.newClient(config);
+			WebTarget target = client.target(url).path(MessageResource.PATH).path("delete").path(String.valueOf(mid));
+			RequestHelper rh = new RequestHelper(url, client, target, mid);
+			queueRest.put(rh);
+		}
+		else {
+			RequestHelperSoap rh = new RequestHelperSoap(mid,dom,url);
+			queueSoap.put(rh);
+		}
 
 	}
 
@@ -530,13 +564,154 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		}
 	}
 
-	private void spinThreads(){
+	private void spinThreadsRest(){
+		BlockingQueue<RequestHelper> lq = new LinkedBlockingQueue<>();
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelper rh = queueRest.take();
+					//try to send non stop
+					for(;;){
+						try {
+							Response r;
+							if (rh.getMethod().equals("POST")) {
+								System.out.println("Le Post Rest");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
+								if( r.getStatus() == Response.Status.OK.getStatusCode()) {
+									List<String> missmatches = r.readEntity(ArrayList.class);
+
+									if (missmatches == null) break;
+
+									System.out.println("MISSMATCHES " + missmatches);
+
+									for (String u: missmatches) {
+										Message m = create_error_message(rh.getMsg(), u);
+										String[] pre = m.getSender().split(" ");
+										String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+										synchronized (this) {
+											if (!allMessages.containsKey(m.getId()))
+												allMessages.put(m.getId(), m);
+										}
+										synchronized (this) {
+											//Add the message (identifier) to the inbox of each recipient
+
+											if (!userInboxs.containsKey(S_name)) {
+												userInboxs.put(S_name, new HashSet<Long>());
+											}
+											userInboxs.get(S_name).add(m.getId());
+
+										}
+									}
+									break;
+								}else
+									throw new WebApplicationException(r.getStatus());
+							}
+							else {
+								System.out.println("Le Delete Rest");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
+								if( r.getStatus() == Response.Status.NO_CONTENT.getStatusCode()) {
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+						} catch ( ProcessingException pe ) {
+							System.out.println("Timeout occurred.");
+							try {
+								lq.put(rh);
+								Thread.sleep( GetMessageClient.RETRY_PERIOD );
+								break;
+							} catch (InterruptedException e) {
+								System.out.println("interrupted");
+							}
+							System.out.println("Retrying to execute request.");
+						}
+					}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+		}).start();
+
+
+		new Thread(() -> {
+			for (;;) {
+				try {
+					RequestHelper rh = lq.take();
+					//try to send non stop
+					for(;;){
+						try {
+							Response r;
+							if (rh.getMethod().equals("POST")) {
+								System.out.println("Le Post Soap");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
+								if( r.getStatus() == Response.Status.OK.getStatusCode()) {
+									List<String> missmatches = r.readEntity(ArrayList.class);
+
+									System.out.println("MISSMATCHES " + missmatches);
+
+									for (String u: missmatches) {
+										Message m = create_error_message(rh.getMsg(), u);
+										String[] pre = m.getSender().split(" ");
+										String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+										synchronized (this) {
+											if (!allMessages.containsKey(m.getId()))
+												allMessages.put(m.getId(), m);
+										}
+										synchronized (this) {
+											//Add the message (identifier) to the inbox of each recipient
+
+											if (!userInboxs.containsKey(S_name)) {
+												userInboxs.put(S_name, new HashSet<Long>());
+											}
+											userInboxs.get(S_name).add(m.getId());
+
+										}
+									}
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+							else {
+								System.out.println("Le Delete Soap");
+								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
+								if( r.getStatus() == Response.Status.NO_CONTENT.getStatusCode()) {
+									break;
+								} else
+									throw new WebApplicationException(r.getStatus());
+							}
+						} catch ( ProcessingException pe ) {
+							System.out.println("Timeout occurred.");
+							lq.put(rh);
+							try {
+								Thread.sleep( GetMessageClient.RETRY_PERIOD );
+								break;
+							} catch (InterruptedException e) {
+								System.out.println("interrupted");
+							}
+							System.out.println("Retrying to execute request.");
+						}
+					}
+
+				} catch (InterruptedException e) {
+					System.out.println("Thread Exception");
+					e.printStackTrace();
+				}
+			}
+		}).start();
+	}
+
+	private void spinThreadsSoap(){
 		BlockingQueue<RequestHelperSoap> lq = new LinkedBlockingQueue<>();
 
 		new Thread(() -> {
 			for (;;) {
 				try {
-					RequestHelperSoap rh = queue.take();
+					RequestHelperSoap rh = queueSoap.take();
 					//try to send non stop
 					for (; ; ) {
 						try {
@@ -653,8 +828,10 @@ public class MessageServiceImpl implements MessageServiceSoap {
 							}
 						}catch ( WebServiceException wse) { //timeout
 							System.out.println("Communication error");
+							lq.put(rh);
 							try {
 								Thread.sleep( RETRY_PERIOD ); //wait until attempting again.
+								break;
 							} catch (InterruptedException e) {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}

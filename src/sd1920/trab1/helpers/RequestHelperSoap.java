@@ -19,7 +19,7 @@ public class RequestHelperSoap {
         this.domain = domain;
     }
 
-    public RequestHelperSoap(String url, Message msg, String domain, String utl){
+    public RequestHelperSoap(String url, Message msg, String domain){
         this.url = url;
         this.msg = msg;
         this.url = url;
