@@ -104,5 +104,5 @@ public interface MessageService {
 	@Path("/add/{domain}")
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
-	void recieve_inboxes(@PathParam("domain")String domain , Message msg);
+	List<String> recieve_inboxes(@PathParam("domain")String domain , Message msg);
 }

@@ -99,35 +99,6 @@ public class MessageResource implements MessageService {
 				allMessages.put(newID, msg);
 		}
 
-		//Check if user exists
-		for (String us : msg.getDestination()){
-			String[] spl = us.split("@");
-			String name = spl[0];
-			String domain = spl[1];
-
-			if(!check_user_exists(name,domain)){
-				Message m = create_error_message(msg,us);
-				String[] pre = m.getSender().split(" ");
-				String S_name = pre[pre.length-1].split("@")[0].substring(1);
-
-				synchronized (this) {
-					if (!allMessages.containsKey(m.getId()))
-						allMessages.put(m.getId(), m);
-				}
-				synchronized (this) {
-					//Add the message (identifier) to the inbox of each recipient
-
-					if (!userInboxs.containsKey(S_name)) {
-						userInboxs.put(S_name, new HashSet<Long>());
-					}
-					userInboxs.get(S_name).add(m.getId());
-
-
-				}
-			}
-
-		}
-
 
 		Log.info("Created new message with id: " + newID);
 		MessageUtills.printMessage(allMessages.get(newID));
@@ -160,16 +131,25 @@ public class MessageResource implements MessageService {
 
 		}
 		m.setId(newID);
-		String subject = String.format("FALHA NO ENVIO DE %s PARA %s",msg.getId(),name);
+		String address = "";
+		for (String u: msg.getDestination()) {
+			if (name.equals(u.split("@")[0])) address = u;
+		}
+
+		String subject = String.format("FALHA NO ENVIO DE %s PARA %s",msg.getId(),address);
 		m.setSubject(subject);
 		return m;
 	}
 
-	private boolean check_user_exists(String name,String domain) {
+	private boolean check_user_exists(String name) {
 		String url = "";
-
-		URI[] uris = discovery_channel.knownUrisOf(domain);
-		url = uris[uris.length-1].toString();
+		try {
+			String domain = InetAddress.getLocalHost().getCanonicalHostName();
+			URI[] uris = discovery_channel.knownUrisOf(domain);
+			url = uris[uris.length-1].toString();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
 
 
 
@@ -186,8 +166,9 @@ public class MessageResource implements MessageService {
 				Response r = target.request().accept(MediaType.APPLICATION_JSON).get();
 				System.out.println("RESPONSE + " + r);
 				if( r.getStatus() == Status.OK.getStatusCode() && r.hasEntity() ) {
-					System.out.println("Success:");
+					System.out.println("GotBoolean");
 					boolean e = r.readEntity(Boolean.class);
+					System.out.println("User " + name	+ " exist? " + e);
 					return e;
 				} else
 					throw new WebApplicationException(r.getStatus());
@@ -388,7 +369,8 @@ public class MessageResource implements MessageService {
 	}
 
 	@Override
-	public void recieve_inboxes(String domain, Message msg) {
+	public List<String> recieve_inboxes(String domain, Message msg) {
+		List<String> missMatches = new ArrayList<>();
 		Long newID = msg.getId();
 
 		List<String> usrs = new ArrayList<>();
@@ -405,30 +387,36 @@ public class MessageResource implements MessageService {
 
 		if (usrs.size() != 0) {
 
-
-
-
 			for (String name : usrs) {
+				//Check if user exists
 
-				synchronized (this) {
-					//Add the message (identifier) to the inbox of each recipient
 
-					if (!userInboxs.containsKey(name)) {
-						userInboxs.put(name, new HashSet<Long>());
+					if(!check_user_exists(name)){
+						missMatches.add(name);
+					}else{
+						synchronized (this) {
+							//Add the message (identifier) to the inbox of each recipient
+
+							if (!userInboxs.containsKey(name)) {
+								userInboxs.put(name, new HashSet<Long>());
+							}
+							userInboxs.get(name).add(newID);
+
+						}
 					}
-					userInboxs.get(name).add(newID);
 
 
-				}
+
 			}
-
 			synchronized (this) {
 				if (!allMessages.containsKey(newID))
 					allMessages.put(newID, msg);
 			}
 
 		}
-		throw new WebApplicationException(Status.OK);
+
+		System.out.println("MISSKK " + missMatches);
+		return  missMatches;
 	}
 
 	public User getUser(String name_unform, String pwd){
@@ -524,14 +512,60 @@ public class MessageResource implements MessageService {
 								System.out.println("Le Post");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
 								if( r.getStatus() == Status.OK.getStatusCode()) {
+									List<String> missmatches = r.readEntity(ArrayList.class);
+
+									System.out.println("MISSMATCHES " + missmatches);
+
+									for (String u: missmatches) {
+										Message m = create_error_message(rh.getMsg(), u);
+										String[] pre = m.getSender().split(" ");
+										String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+										synchronized (this) {
+											if (!allMessages.containsKey(m.getId()))
+												allMessages.put(m.getId(), m);
+										}
+										synchronized (this) {
+											//Add the message (identifier) to the inbox of each recipient
+
+											if (!userInboxs.containsKey(S_name)) {
+												userInboxs.put(S_name, new HashSet<Long>());
+											}
+											userInboxs.get(S_name).add(m.getId());
+
+										}
+									}
 									break;
-								} else
+								}else
 									throw new WebApplicationException(r.getStatus());
 							}
 							else {
 								System.out.println("Le Delete");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
 								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
+									List<String> missmatches = r.readEntity(ArrayList.class);
+
+									System.out.println("MISSMATCHES " + missmatches);
+
+									for (String u: missmatches) {
+										Message m = create_error_message(rh.getMsg(), u);
+										String[] pre = m.getSender().split(" ");
+										String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+										synchronized (this) {
+											if (!allMessages.containsKey(m.getId()))
+												allMessages.put(m.getId(), m);
+										}
+										synchronized (this) {
+											//Add the message (identifier) to the inbox of each recipient
+
+											if (!userInboxs.containsKey(S_name)) {
+												userInboxs.put(S_name, new HashSet<Long>());
+											}
+											userInboxs.get(S_name).add(m.getId());
+
+										}
+									}
 									break;
 								} else
 									throw new WebApplicationException(r.getStatus());
@@ -586,6 +620,7 @@ public class MessageResource implements MessageService {
 							lq.put(rh);
 							try {
 								Thread.sleep( GetMessageClient.RETRY_PERIOD );
+								break;
 							} catch (InterruptedException e) {
 								System.out.println("interrupted");
 							}

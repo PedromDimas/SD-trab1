@@ -113,35 +113,6 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		}
 
 
-		//Check if user exists
-		for (String us : msg.getDestination()){
-			String[] spl = us.split("@");
-			String name = spl[0];
-			String domain = spl[1];
-
-			if(!check_user_exists(name,domain)){
-				Message m = create_error_message(msg,us);
-				String[] pre = m.getSender().split(" ");
-				String S_name = pre[pre.length-1].split("@")[0].substring(1);
-
-				synchronized (this) {
-					if (!allMessages.containsKey(m.getId()))
-						allMessages.put(m.getId(), m);
-				}
-				synchronized (this) {
-					//Add the message (identifier) to the inbox of each recipient
-
-					if (!userInboxs.containsKey(S_name)) {
-						userInboxs.put(S_name, new HashSet<Long>());
-					}
-					userInboxs.get(S_name).add(m.getId());
-
-
-				}
-			}
-
-		}
-
 
 
 		Log.info("Created new message with id: " + newID);
@@ -177,17 +148,24 @@ public class MessageServiceImpl implements MessageServiceSoap {
 
 		}
 		m.setId(newID);
-		String subject = String.format("FALHA NO ENVIO DE %s PARA %s",msg.getId(),name);
+		String address = "";
+		for (String u : msg.getDestination()){
+			if (name.equals(u.split("@")[0])) address = u;
+		}
+		String subject = String.format("FALHA NO ENVIO DE %s PARA %s",msg.getId(),address);
 		m.setSubject(subject);
 		return m;
 	}
 
-	private boolean check_user_exists(String name,String domain) throws MessagesException {
+	private boolean check_user_exists(String name) throws MessagesException {
 		String url = "";
-
-
-		URI[] uris = discovery_channel.knownUrisOf(domain);
-		url = uris[uris.length-1].toString();
+		try {
+			String domain = InetAddress.getLocalHost().getCanonicalHostName();
+			URI[] uris = discovery_channel.knownUrisOf(domain);
+			url = uris[uris.length-1].toString();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
 
 
 		//Form Connection with server
@@ -486,7 +464,8 @@ public class MessageServiceImpl implements MessageServiceSoap {
 	}
 
 	@Override
-	public long recieve_inboxes(String domain, Message msg)  {
+	public List<String> recieve_inboxes(String domain, Message msg)  {
+		List<String> missMatches = new ArrayList<>();
 		Long newID = msg.getId();
 
 		List<String> usrs = new ArrayList<>();
@@ -503,25 +482,41 @@ public class MessageServiceImpl implements MessageServiceSoap {
 
 		if (usrs.size() != 0) {
 
+
+
 			synchronized (this) {
 				if (!allMessages.containsKey(newID))
 					allMessages.put(newID, msg);
 			}
 
 			for (String name : usrs) {
-				synchronized (this) {
-					//Add the message (identifier) to the inbox of each recipient
 
-					if (!userInboxs.containsKey(name)) {
-						userInboxs.put(name, new HashSet<Long>());
-					}
-					userInboxs.get(name).add(newID);
+				//Check if user exists
 
-
+				boolean ex = false;
+				try {
+					ex = check_user_exists(name);
+				} catch (MessagesException e) {
+					e.printStackTrace();
 				}
+
+				if(!ex){
+						missMatches.add(name);
+					}else {
+						synchronized (this) {
+							//Add the message (identifier) to the inbox of each recipient
+
+							if (!userInboxs.containsKey(name)) {
+								userInboxs.put(name, new HashSet<Long>());
+							}
+							userInboxs.get(name).add(newID);
+
+
+						}
+					}
 			}
 		}
-		return msg.getId();
+		return missMatches;
 	}
 
 	@Override
@@ -560,8 +555,26 @@ public class MessageServiceImpl implements MessageServiceSoap {
 							((BindingProvider) messages).getRequestContext().put(BindingProviderProperties.REQUEST_TIMEOUT, REPLY_TIMEOUT);
 
 							if (rh.getMethod().equals("POST")) {
-								Long mid = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
-								System.out.println("Success, message posted with id: " + mid);
+								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+								for (String u: missMatches) {
+									Message m = create_error_message(rh.getMsg(), u);
+									String[] pre = m.getSender().split(" ");
+									String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+									synchronized (this) {
+										if (!allMessages.containsKey(m.getId()))
+											allMessages.put(m.getId(), m);
+									}
+									synchronized (this) {
+										//Add the message (identifier) to the inbox of each recipient
+
+										if (!userInboxs.containsKey(S_name)) {
+											userInboxs.put(S_name, new HashSet<Long>());
+										}
+										userInboxs.get(S_name).add(m.getId());
+
+									}
+								}
 								break;
 							} else {
 								messages.deleteRegardless(rh.getMid());
@@ -580,6 +593,8 @@ public class MessageServiceImpl implements MessageServiceSoap {
 							System.out.println("Retrying to execute request.");
 						} catch (MalformedURLException e) {
 							System.out.printf("Malformation");
+						} catch (MessagesException e) {
+							e.printStackTrace();
 						}
 
 					}
@@ -610,8 +625,26 @@ public class MessageServiceImpl implements MessageServiceSoap {
 							((BindingProvider) messages).getRequestContext().put(BindingProviderProperties.REQUEST_TIMEOUT, REPLY_TIMEOUT);
 
 							if (rh.getMethod().equals("POST")) {
-								Long mid = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
-								System.out.println("Success, message posted with id: " + mid);
+								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+								for (String u: missMatches) {
+									Message m = create_error_message(rh.getMsg(), u);
+									String[] pre = m.getSender().split(" ");
+									String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+									synchronized (this) {
+										if (!allMessages.containsKey(m.getId()))
+											allMessages.put(m.getId(), m);
+									}
+									synchronized (this) {
+										//Add the message (identifier) to the inbox of each recipient
+
+										if (!userInboxs.containsKey(S_name)) {
+											userInboxs.put(S_name, new HashSet<Long>());
+										}
+										userInboxs.get(S_name).add(m.getId());
+
+									}
+								}
 								break;
 							} else {
 								messages.deleteRegardless(rh.getMid());
@@ -627,6 +660,8 @@ public class MessageServiceImpl implements MessageServiceSoap {
 							}
 							System.out.println("Retrying to execute request.");
 						} catch (MalformedURLException e) {
+							e.printStackTrace();
+						} catch (MessagesException e) {
 							e.printStackTrace();
 						}
 

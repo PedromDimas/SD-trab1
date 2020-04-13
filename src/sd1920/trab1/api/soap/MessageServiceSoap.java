@@ -78,7 +78,7 @@ public interface MessageServiceSoap {
 	void deleteMessage(String user, String pwd, long mid) throws MessagesException;
 
 	@WebMethod
-	public long	recieve_inboxes(String domain, Message msg);
+	public List<String>	recieve_inboxes(String domain, Message msg) throws MessagesException;
 
 	@WebMethod
 	public void deleteRegardless(long mid);
