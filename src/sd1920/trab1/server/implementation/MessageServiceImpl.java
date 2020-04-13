@@ -143,6 +143,12 @@ public class MessageServiceImpl implements MessageServiceSoap {
 		}
 
 
+		try {
+			Thread.sleep(500);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+
 		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
 		Log.info("Recorded message with identifier: " + newID);
 		return newID;
@@ -482,7 +488,6 @@ public class MessageServiceImpl implements MessageServiceSoap {
 
 		String serviceType = url.split("/")[3];
 
-		System.out.println( "CONACA" + serviceType);
 
 		if (serviceType.equals("rest")) {
 			Client client = ClientBuilder.newClient(config);
@@ -581,7 +586,7 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								if( r.getStatus() == Response.Status.OK.getStatusCode()) {
 									List<String> missmatches = r.readEntity(ArrayList.class);
 
-									if (missmatches == null) break;
+									if (missmatches.isEmpty()) break;
 
 									System.out.println("MISSMATCHES " + missmatches);
 
@@ -651,7 +656,7 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								if( r.getStatus() == Response.Status.OK.getStatusCode()) {
 									List<String> missmatches = r.readEntity(ArrayList.class);
 
-									System.out.println("MISSMATCHES " + missmatches);
+									if (missmatches.isEmpty()) break;
 
 									for (String u: missmatches) {
 										Message m = create_error_message(rh.getMsg(), u);
@@ -719,6 +724,10 @@ public class MessageServiceImpl implements MessageServiceSoap {
 
 							MessageServiceSoap messages = null;
 
+							URL url = new URL(rh.getUrl());
+
+							URLConnection con= url.openConnection(); con.setConnectTimeout(CONNECTION_TIMEOUT); con.connect();
+
 							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
 							Service service = Service.create( new URL(rh.getUrl() + MESSAGES_WSDL), QNAME);
 							messages = service.getPort( MessageServiceSoap.class );
@@ -731,6 +740,9 @@ public class MessageServiceImpl implements MessageServiceSoap {
 
 							if (rh.getMethod().equals("POST")) {
 								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+
+								if (missMatches.isEmpty())break;
+
 								for (String u: missMatches) {
 									Message m = create_error_message(rh.getMsg(), u);
 									String[] pre = m.getSender().split(" ");
@@ -756,7 +768,7 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								System.out.println("Success, message posted with id: " + rh.getMid());
 								break;
 							}
-						}catch ( WebServiceException wse) { //timeout
+						}catch (IOException | WebServiceException wse) { //timeout
 							System.out.println("Communication error");
 							try {
 								lq.put(rh);
@@ -766,9 +778,7 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}
 							System.out.println("Retrying to execute request.");
-						} catch (MalformedURLException e) {
-							System.out.printf("Malformation");
-						} catch (MessagesException e) {
+						}catch (MessagesException e) {
 							e.printStackTrace();
 						}
 
@@ -791,6 +801,10 @@ public class MessageServiceImpl implements MessageServiceSoap {
 						try {
 							MessageServiceSoap messages = null;
 
+							URL url = new URL(rh.getUrl());
+
+							URLConnection con= url.openConnection(); con.setConnectTimeout(CONNECTION_TIMEOUT); con.connect();
+
 							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
 							Service service = Service.create( new URL(rh.getUrl() + MESSAGES_WSDL), QNAME);
 							messages = service.getPort( MessageServiceSoap.class );
@@ -801,6 +815,9 @@ public class MessageServiceImpl implements MessageServiceSoap {
 
 							if (rh.getMethod().equals("POST")) {
 								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+
+								if (missMatches.isEmpty())break;
+
 								for (String u: missMatches) {
 									Message m = create_error_message(rh.getMsg(), u);
 									String[] pre = m.getSender().split(" ");
@@ -826,7 +843,7 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								System.out.println("Success, message posted with id: " + rh.getMid());
 								break;
 							}
-						}catch ( WebServiceException wse) { //timeout
+						}catch (IOException | WebServiceException wse) { //timeout
 							System.out.println("Communication error");
 							lq.put(rh);
 							try {
@@ -836,8 +853,6 @@ public class MessageServiceImpl implements MessageServiceSoap {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}
 							System.out.println("Retrying to execute request.");
-						} catch (MalformedURLException e) {
-							e.printStackTrace();
 						} catch (MessagesException e) {
 							e.printStackTrace();
 						}

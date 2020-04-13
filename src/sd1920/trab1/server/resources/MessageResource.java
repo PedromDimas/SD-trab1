@@ -1,5 +1,6 @@
 package sd1920.trab1.server.resources;
 
+import java.io.IOException;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
@@ -125,6 +126,12 @@ public class MessageResource implements MessageService {
 			requestPost(msg);
 		} catch (InterruptedException e) {
 			System.out.println("Interrupted");
+		}
+
+		try{
+			Thread.sleep(500);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
 
 		//Return the id of the registered message to the client (in the body of a HTTP Response with 200)
@@ -548,7 +555,7 @@ public class MessageResource implements MessageService {
 								if( r.getStatus() == Status.OK.getStatusCode()) {
 									List<String> missmatches = r.readEntity(ArrayList.class);
 
-									if (missmatches == null) break;
+									if (missmatches.isEmpty()) break;
 
 									System.out.println("MISSMATCHES " + missmatches);
 
@@ -579,29 +586,6 @@ public class MessageResource implements MessageService {
 								System.out.println("Le Delete Rest");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).delete();
 								if( r.getStatus() == Status.NO_CONTENT.getStatusCode()) {
-									List<String> missmatches = r.readEntity(ArrayList.class);
-
-									System.out.println("MISSMATCHES " + missmatches);
-
-									for (String u: missmatches) {
-										Message m = create_error_message(rh.getMsg(), u);
-										String[] pre = m.getSender().split(" ");
-										String S_name = pre[pre.length - 1].split("@")[0].substring(1);
-
-										synchronized (this) {
-											if (!allMessages.containsKey(m.getId()))
-												allMessages.put(m.getId(), m);
-										}
-										synchronized (this) {
-											//Add the message (identifier) to the inbox of each recipient
-
-											if (!userInboxs.containsKey(S_name)) {
-												userInboxs.put(S_name, new HashSet<Long>());
-											}
-											userInboxs.get(S_name).add(m.getId());
-
-										}
-									}
 									break;
 								} else
 									throw new WebApplicationException(r.getStatus());
@@ -639,6 +623,29 @@ public class MessageResource implements MessageService {
 								System.out.println("Le Post Soap");
 								r = rh.getTarget().request().accept(MediaType.APPLICATION_JSON).post(Entity.entity(rh.getMsg(), MediaType.APPLICATION_JSON));
 								if( r.getStatus() == Status.OK.getStatusCode()) {
+									List<String> missmatches = r.readEntity(ArrayList.class);
+
+									if (missmatches.isEmpty()) break;
+
+									for (String u: missmatches) {
+										Message m = create_error_message(rh.getMsg(), u);
+										String[] pre = m.getSender().split(" ");
+										String S_name = pre[pre.length - 1].split("@")[0].substring(1);
+
+										synchronized (this) {
+											if (!allMessages.containsKey(m.getId()))
+												allMessages.put(m.getId(), m);
+										}
+										synchronized (this) {
+											//Add the message (identifier) to the inbox of each recipient
+
+											if (!userInboxs.containsKey(S_name)) {
+												userInboxs.put(S_name, new HashSet<Long>());
+											}
+											userInboxs.get(S_name).add(m.getId());
+
+										}
+									}
 									break;
 								} else
 									throw new WebApplicationException(r.getStatus());
@@ -686,6 +693,10 @@ public class MessageResource implements MessageService {
 
 							MessageServiceSoap messages = null;
 
+							URL url = new URL(rh.getUrl());
+
+							URLConnection con= url.openConnection(); con.setConnectTimeout(CONNECTION_TIMEOUT); con.connect();
+
 							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
 							Service service = Service.create( new URL(rh.getUrl() + MESSAGES_WSDL), QNAME);
 							messages = service.getPort( MessageServiceSoap.class );
@@ -698,6 +709,9 @@ public class MessageResource implements MessageService {
 
 							if (rh.getMethod().equals("POST")) {
 								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+
+								if (missMatches.isEmpty())break;
+
 								for (String u: missMatches) {
 									Message m = create_error_message(rh.getMsg(), u);
 									String[] pre = m.getSender().split(" ");
@@ -723,7 +737,7 @@ public class MessageResource implements MessageService {
 								System.out.println("Success, message posted with id: " + rh.getMid());
 								break;
 							}
-						}catch ( WebServiceException wse) { //timeout
+						}catch (IOException | WebServiceException wse) { //timeout
 							System.out.println("Communication error");
 							try {
 								lq.put(rh);
@@ -733,9 +747,7 @@ public class MessageResource implements MessageService {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}
 							System.out.println("Retrying to execute request.");
-						} catch (MalformedURLException e) {
-							System.out.printf("Malformation");
-						} catch (MessagesException e) {
+						}catch (MessagesException e) {
 							e.printStackTrace();
 						}
 
@@ -758,6 +770,13 @@ public class MessageResource implements MessageService {
 						try {
 							MessageServiceSoap messages = null;
 
+							URL url = new URL(rh.getUrl());
+
+							URLConnection con= url.openConnection();
+							con.setConnectTimeout(CONNECTION_TIMEOUT);
+							con.connect();
+
+
 							QName QNAME = new QName(MessageServiceSoap.NAMESPACE, MessageServiceSoap.NAME);
 							Service service = Service.create( new URL(rh.getUrl() + MESSAGES_WSDL), QNAME);
 							messages = service.getPort( MessageServiceSoap.class );
@@ -768,6 +787,9 @@ public class MessageResource implements MessageService {
 
 							if (rh.getMethod().equals("POST")) {
 								List<String> missMatches = messages.recieve_inboxes(rh.getDomain(), rh.getMsg());
+
+								if (missMatches.isEmpty())break;
+
 								for (String u: missMatches) {
 									Message m = create_error_message(rh.getMsg(), u);
 									String[] pre = m.getSender().split(" ");
@@ -793,16 +815,16 @@ public class MessageResource implements MessageService {
 								System.out.println("Success, message posted with id: " + rh.getMid());
 								break;
 							}
-						}catch ( WebServiceException wse) { //timeout
+						}catch (IOException | WebServiceException wse) { //timeout
 							System.out.println("Communication error");
+							lq.put(rh);
 							try {
 								Thread.sleep( RETRY_PERIOD ); //wait until attempting again.
+								break;
 							} catch (InterruptedException e) {
 								//Nothing to be done here, if this happens we will just retry sooner.
 							}
 							System.out.println("Retrying to execute request.");
-						} catch (MalformedURLException e) {
-							e.printStackTrace();
 						} catch (MessagesException e) {
 							e.printStackTrace();
 						}
